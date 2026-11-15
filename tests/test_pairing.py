@@ -126,10 +126,14 @@ class PairOnLan(unittest.TestCase):
 
         def tamper(offer):
             offer["identity"] = pairing.b64(other)
-        http, _ = self.mac(["approved"], tamper)
+        http, seen = self.mac(["approved"], tamper)
+        shown = []
         with self.assertRaises(pairing.PairingError) as caught:
-            self.run_pair(http)
+            pairing.pair_on_lan("http://192.0.2.20:8765", "Studio iMac", "0.1.0", shown.append,
+                                http=http, sleep=lambda s: None, clock=lambda: 0)
         self.assertEqual(caught.exception.reason, "bad-answer")
+        self.assertEqual(shown, [], "no number is shown for an answer that does not verify")
+        self.assertEqual([c[0] for c in seen["calls"]], ["POST"], "and nothing is polled")
 
     def test_closed_window(self):
         def http(method, url, body=None, headers=None):
