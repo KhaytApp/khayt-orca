@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "khayt-orca"
+version = "0.1.0"
+description = "Khayt for OrcaSlicer: send sliced plates to your Khayt shop's inbox"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+dependencies = ["cryptography>=42,<47"]
+
+[tool.setuptools]
+packages = ["khayt_orca"]

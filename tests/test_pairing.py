@@ -1,0 +1,143 @@
+"""Pairing against Khayt's shared vectors (copied from Khayt's docs/)."""
+
+import json
+import pathlib
+import unittest
+
+from khayt_orca import pairing
+
+VECTORS = pathlib.Path(__file__).parent / "vectors"
+
+
+def load(name):
+    return json.loads((VECTORS / name).read_text(encoding="utf-8"))
+
+
+try:
+    import cryptography  # noqa: F401
+    HAVE_CRYPTO = True
+except ImportError:
+    HAVE_CRYPTO = False
+
+
+class CheckNumber(unittest.TestCase):
+    def test_vectors(self):
+        cases = load("connector-pair.vectors.json")["cases"]
+        self.assertGreaterEqual(len(cases), 4)
+        self.assertTrue(any(c["check"].startswith("0") for c in cases), "a leading zero is kept")
+        for c in cases:
+            with self.subTest(c["name"]):
+                self.assertEqual(pairing.check_number(c["deviceId"], c["identityPublic"], c["serverPublic"],
+                                                      c["pluginPublic"]), c["check"])
+
+    def test_spaced(self):
+        self.assertEqual(pairing.spaced("028159"), "028 159")
+
+
+class DeviceKeys(unittest.TestCase):
+    v = load("lan-device-keys.vectors.json")
+
+    def test_hkdf_matches_the_mac(self):
+        key = pairing.device_key(pairing.unb64(self.v["shared"]), self.v["deviceId"])
+        self.assertEqual(pairing.b64(key), self.v["key"])
+
+    def test_zero_secret_is_refused(self):
+        with self.assertRaises(ValueError):
+            pairing.device_key(bytes(32), self.v["deviceId"])
+
+    def test_enrol_message(self):
+        message = pairing.enrol_message(self.v["deviceId"], self.v["macPublic"], self.v["phonePublic"])
+        self.assertEqual(message.decode("utf-8"), self.v["enrol"]["message"])
+
+    def test_signed_requests(self):
+        key = pairing.unb64(self.v["key"])
+        for name in ("patch", "get"):
+            with self.subTest(name):
+                case = self.v[name]
+                _, method, target, when, nonce, _ = case["canonical"].split("\n")
+                body = case.get("body", "").encode("utf-8")
+                self.assertEqual(pairing.canonical(method, target, when, nonce, body), case["canonical"])
+                headers = pairing.signed_headers(key, self.v["deviceId"], method, target, body,
+                                                 now=int(when), nonce=nonce)
+                self.assertEqual(headers["x-khayt-mac"], case["mac"])
+                self.assertEqual(headers["x-khayt-device"], self.v["deviceId"])
+
+
+@unittest.skipUnless(HAVE_CRYPTO, "needs cryptography (installed with the plugin; CI has it)")
+class PairOnLan(unittest.TestCase):
+    """The whole exchange against a fake Mac that does what LanConnectorPairing does."""
+
+    def mac(self, states, tamper=None):
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
+        from cryptography.hazmat.primitives import serialization
+        raw = (serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+        identity, server = Ed25519PrivateKey.generate(), X25519PrivateKey.generate()
+        seen = {"calls": []}
+        replies = list(states)
+
+        def http(method, url, body=None, headers=None):
+            seen["calls"].append((method, url, headers))
+            if method == "POST":
+                asked = json.loads(body)
+                seen["plugin"] = asked["publicKey"]
+                server_public = pairing.b64(server.public_key().public_bytes(*raw))
+                identity_public = pairing.b64(identity.public_key().public_bytes(*raw))
+                sig = identity.sign(pairing.enrol_message("dev_SampleConnector0001", server_public, asked["publicKey"]))
+                seen["check"] = pairing.check_number("dev_SampleConnector0001", identity_public, server_public,
+                                                     asked["publicKey"])
+                shared = server.exchange(X25519PublicKey.from_public_bytes(pairing.unb64(asked["publicKey"])))
+                seen["key"] = pairing.b64(pairing.device_key(shared, "dev_SampleConnector0001"))
+                offer = {"pairId": "abcdefghij12", "pollSecret": "s" * 32, "deviceId": "dev_SampleConnector0001",
+                         "publicKey": server_public, "sig": pairing.b64(sig), "identity": identity_public}
+                if tamper:
+                    tamper(offer)
+                return 200, json.dumps(offer).encode()
+            self.assertEqual(headers, {"x-khayt-poll": "s" * 32})
+            return 200, json.dumps({"state": replies.pop(0)}).encode()
+        return http, seen
+
+    def run_pair(self, http):
+        shown = []
+        clock = iter(range(0, 1000, 2))
+        result = pairing.pair_on_lan("http://192.0.2.20:8765/", "Studio iMac", "0.1.0", shown.append,
+                                     http=http, sleep=lambda s: None, clock=lambda: next(clock))
+        return result, shown
+
+    def test_approved(self):
+        http, seen = self.mac(["waiting", "waiting", "approved"])
+        paired, shown = self.run_pair(http)
+        self.assertEqual(shown, [seen["check"]], "the plugin shows the Mac's number")
+        self.assertEqual(paired.key, seen["key"], "both sides hold the same key")
+        self.assertEqual(paired.base, "http://192.0.2.20:8765")
+        self.assertNotIn("pin", json.dumps(seen["calls"]).lower(), "no PIN is ever sent")
+
+    def test_denied(self):
+        http, _ = self.mac(["waiting", "denied"])
+        with self.assertRaises(pairing.PairingError) as caught:
+            self.run_pair(http)
+        self.assertEqual(caught.exception.reason, "denied")
+
+    def test_swapped_identity_is_refused_before_any_number(self):
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from cryptography.hazmat.primitives import serialization
+        other = Ed25519PrivateKey.generate().public_key().public_bytes(
+            serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+
+        def tamper(offer):
+            offer["identity"] = pairing.b64(other)
+        http, _ = self.mac(["approved"], tamper)
+        with self.assertRaises(pairing.PairingError) as caught:
+            self.run_pair(http)
+        self.assertEqual(caught.exception.reason, "bad-answer")
+
+    def test_closed_window(self):
+        def http(method, url, body=None, headers=None):
+            return 403, b'{"reason":"pairing-closed","error":"On the Mac, click Pair a slicer"}'
+        with self.assertRaises(pairing.PairingError) as caught:
+            self.run_pair(http)
+        self.assertEqual(caught.exception.reason, "pairing-closed")
+
+
+if __name__ == "__main__":
+    unittest.main()
