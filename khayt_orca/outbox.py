@@ -74,6 +74,14 @@ class Outbox:
         self._save(item)
         return item
 
+    def mark(self, item_id: str, **fields) -> None:
+        """Note something about an item (what the shop did with it), keeping the rest."""
+        for item in self.items():
+            if item["id"] == item_id:
+                item.update(fields)
+                self._save(item)
+                return
+
     def forget(self, item_id: str) -> None:
         shutil.rmtree(self._dir(item_id), ignore_errors=True)
 

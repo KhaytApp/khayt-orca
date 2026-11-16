@@ -23,6 +23,9 @@ PAIRED_FILE = "pairing.json"     # never "secret"/"cert"/"conf": Orca's audit ho
 STATE_FILE = "state.json"
 QUEUE_EVERY_VISIBLE = 15
 QUEUE_EVERY_HIDDEN = 60
+SLICE_CHECK_EVERY = 60
+# What the shop did with a file once it was in the inbox. Settled ones are not asked about again.
+SETTLED = ("left-inbox", "expired", "gone")
 
 
 class Controller:
@@ -137,6 +140,32 @@ class Controller:
         self.on_change()
         return self.queue
 
+    def refresh_sent(self) -> int:
+        """Ask the Mac what became of delivered files (at most once a minute each, until settled):
+        still in the inbox, taken by the shop, or gone. Only the state comes back, never a job."""
+        if not self.paired:
+            return 0
+        asked = 0
+        now = self.clock()
+        for item in self.outbox.items():
+            if item["state"] != "done" or not item.get("sliceId") or item.get("macState") in SETTLED:
+                continue
+            if now - item.get("checkedAt", 0) < SLICE_CHECK_EVERY:
+                continue
+            try:
+                state = self.shop().slice_state(item["sliceId"])
+            except transport.ShopError as e:
+                if e.status != 404:
+                    continue
+                state = "gone"
+            except OSError:
+                break
+            self.outbox.mark(item["id"], macState=state, checkedAt=now)
+            asked += 1
+        if asked:
+            self.on_change()
+        return asked
+
     # -- the worker ---------------------------------------------------------------
 
     def start(self, visible: Callable[[], bool] = lambda: True) -> None:
@@ -151,6 +180,7 @@ class Controller:
                 every = QUEUE_EVERY_VISIBLE if visible() else QUEUE_EVERY_HIDDEN
                 if self.clock() - last_queue >= every:
                     self.refresh_queue()
+                    self.refresh_sent()
                     last_queue = self.clock()
                 self._wake.wait(timeout=5)
                 self._wake.clear()
@@ -170,7 +200,7 @@ class Controller:
         jobs = [{k: j.get(k) for k in ("number", "stage", "machine", "file")} for j in q.get("jobs", [])
                 if isinstance(j, dict)]
         machines = [{k: m.get(k) for k in ("name", "state")} for m in q.get("machines", []) if isinstance(m, dict)]
-        sent = [{"file": i["file"], "state": i["state"], "reason": i.get("reason")}
+        sent = [{"file": i["file"], "state": i["state"], "reason": i.get("reason"), "shop": i.get("macState")}
                 for i in self.outbox.items()[-20:]]
         return {
             "paired": bool(self.paired),
