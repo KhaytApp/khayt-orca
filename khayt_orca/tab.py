@@ -1,0 +1,73 @@
+"""The Khayt tab's page: self-contained HTML, inline CSS and JS, no network of its own.
+
+Everything shown arrives from the plugin as plain data (`Controller.view`) and is
+written with textContent, never as HTML: a file name typed by a person is text.
+"""
+
+HTML = r"""<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<style>
+:root{--bg:#fff;--card:#f6f8f8;--line:#e3e6e8;--t1:#101417;--t2:#697079;--brand:#216dca;--warn:#b26b00}
+@media (prefers-color-scheme:dark){:root{--bg:#16191c;--card:#1f2327;--line:#2c3136;--t1:#eef1f3;--t2:#9aa3ab;--brand:#4b8fe0;--warn:#e0a040}}
+body{margin:0;padding:16px;background:var(--bg);color:var(--t1);font:13px/1.45 -apple-system,system-ui,Segoe UI,sans-serif}
+h1{font-size:18px;margin:0 0 4px} .sub{color:var(--t2);margin:0 0 14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;margin:0 0 14px;overflow:hidden}
+.card h2{font-size:13px;margin:0;padding:10px 14px;border-bottom:1px solid var(--line)}
+.row{display:flex;gap:10px;padding:8px 14px;border-top:1px solid var(--line)} .row:first-of-type{border-top:0}
+.row .grow{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.muted{color:var(--t2)} .warn{color:var(--warn)} .mono{font-family:ui-monospace,Menlo,monospace}
+button{font:inherit;padding:5px 12px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--t1);cursor:pointer}
+button.primary{background:var(--brand);border-color:var(--brand);color:#fff}
+input{font:inherit;padding:5px 8px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--t1);width:220px}
+.check{font:600 28px ui-monospace,Menlo,monospace;letter-spacing:4px;margin:8px 0}
+[hidden]{display:none}
+</style></head><body>
+<h1>Khayt</h1><p class="sub" id="shop">Send sliced files to your shop's inbox.</p>
+<p class="warn" id="problem" hidden></p>
+
+<div class="card" id="pairCard" hidden><h2>Pair with your shop</h2><div class="row" style="flex-wrap:wrap">
+  <div class="grow muted" style="white-space:normal">In Khayt on the Mac, click Pair a slicer, then enter the address it shows.</div>
+  <input id="addr" placeholder="192.0.2.20:8765" autocomplete="off"><button class="primary" id="pairBtn">Pair</button>
+</div><div class="row" id="checkRow" hidden><div class="grow">Check that the Mac shows the same number, then approve there:
+  <div class="check" id="check"></div></div></div></div>
+
+<div class="card" id="queueCard" hidden><h2>Shop queue <span class="muted" id="inbox"></span></h2><div id="jobs"></div></div>
+<div class="card" id="machinesCard" hidden><h2>Machines</h2><div id="machines"></div></div>
+<div class="card" id="sentCard" hidden><h2>Sent from this computer</h2><div id="sent"></div></div>
+<p id="actions" hidden><button id="refresh">Refresh</button> <button id="unpair">Unpair</button></p>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const STATE = {new: 'Waiting to send', announced: 'Sending…', done: 'In the Khayt inbox', failed: 'Not sent'};
+function row(parent, cells) {
+  const r = document.createElement('div'); r.className = 'row';
+  for (const [text, cls] of cells) { const s = document.createElement('div'); s.className = cls || ''; s.textContent = text == null ? '' : String(text); r.appendChild(s); }
+  parent.appendChild(r);
+}
+function draw(v) {
+  $('pairCard').hidden = v.paired; $('actions').hidden = !v.paired;
+  $('queueCard').hidden = !v.paired; $('machinesCard').hidden = !v.paired || !v.machines.length;
+  $('sentCard').hidden = !v.sent.length;
+  $('shop').textContent = v.shop ? v.shop : 'Send sliced files to your shop\'s inbox.';
+  $('problem').hidden = !v.problem; $('problem').textContent = v.problem ? 'Khayt: ' + v.problem : '';
+  $('inbox').textContent = v.inboxWaiting != null ? '· ' + v.inboxWaiting + ' in the inbox' : '';
+  $('jobs').replaceChildren(); $('machines').replaceChildren(); $('sent').replaceChildren();
+  for (const j of v.jobs) row($('jobs'), [[j.number, 'mono'], [j.file || '', 'grow muted'], [j.machine || '', 'muted'], [j.stage, '']]);
+  if (!v.jobs.length) row($('jobs'), [['No open jobs.', 'muted grow']]);
+  if (v.more) row($('jobs'), [['and ' + v.more + ' more', 'muted grow']]);
+  for (const m of v.machines) row($('machines'), [[m.name, 'grow'], [m.state, 'muted']]);
+  for (const s of v.sent.slice().reverse()) row($('sent'), [[s.file, 'grow mono'], [STATE[s.state] || s.state, s.state === 'failed' ? 'warn' : 'muted'], [s.reason || '', 'muted']]);
+}
+orca.onMessage((m) => {
+  if (m.type === 'view') draw(m.view);
+  if (m.type === 'check') { $('checkRow').hidden = false; $('check').textContent = m.check; }
+  if (m.type === 'paired' || m.type === 'pair-failed') { $('checkRow').hidden = true; $('pairBtn').disabled = false; }
+  if (m.type === 'pair-failed') { $('problem').hidden = false; $('problem').textContent = 'Pairing: ' + m.reason; }
+});
+$('pairBtn').onclick = () => { $('pairBtn').disabled = true; orca.postMessage({type: 'pair', address: $('addr').value, name: 'OrcaSlicer'}); };
+$('refresh').onclick = () => orca.postMessage({type: 'refresh'});
+$('unpair').onclick = () => orca.postMessage({type: 'unpair'});
+document.addEventListener('visibilitychange', () => orca.postMessage({type: document.hidden ? 'hidden' : 'ready'}));
+orca.postMessage({type: 'ready'});
+</script></body></html>
+"""
