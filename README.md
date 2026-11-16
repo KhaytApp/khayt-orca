@@ -7,9 +7,12 @@ shop's network:
 
 1. In Khayt on the Mac: Settings → Online → Connected apps → **Pair a slicer**.
 2. In OrcaSlicer: Khayt → Pair → On this network, and enter the address the Mac shows.
-3. Both screens show the same 6-digit number. Check it, then click **Approve** on the Mac.
+3. Both screens show the same 6-digit number. Check it, then click **Numbers match — approve** on the Mac.
 
 The plugin never sees your LAN PIN, and its key can't read your book, customers or prices.
+
+**Not available yet:** Pair a slicer is switched off in current Khayt releases. It will be
+turned on in a later release, after this plugin has been tested end to end against it.
 
 ## Tests
 
