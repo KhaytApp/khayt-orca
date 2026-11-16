@@ -3,7 +3,12 @@
 The plugin never sees the shop's PIN. It asks the Mac to pair while the owner
 has clicked "Pair a slicer" (Settings > Online > Connected apps), shows the
 same 6-digit check number the Mac shows, and waits for the owner to approve.
-Protocol: Khayt's docs/LAN_API.md, "POST /api/connectors/pair".
+Protocol: Khayt's docs/LAN_API.md, "POST /api/connectors/pair" (v2).
+
+Commit, then reveal: the plugin first sends only SHA-256 of its key and a
+random nonce, checks the Mac's signed answer, and only then reveals them. A
+device in the middle therefore cannot grind its own keys until the numbers
+match; never show a number for an answer whose signature does not verify.
 
 The pure parts (check number, HKDF, request signing) use only the standard
 library and are tested against Khayt's shared vectors. X25519 and Ed25519 come
@@ -23,7 +28,10 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Callable, Optional
 
-CHECK_PREFIX = "khayt-connector-check-v1"
+CHECK_PREFIX = "khayt-connector-check-v2"
+COMMIT_PREFIX = "khayt-connector-commit-v2"
+OFFER_PREFIX = "khayt-enrol-commit-v2:"
+NONCE_BYTES = 16
 DEVICE_SALT = b"khayt-device-v1"
 CANONICAL_PREFIX = "khayt-req-v1"
 ENROL_PREFIX = "khayt-enrol:"
@@ -41,9 +49,24 @@ def unb64(text: str) -> bytes:
 
 # --- shared with the Mac (vectors in tests/vectors) -------------------------
 
-def check_number(device_id: str, identity_public: str, server_public: str, plugin_public: str) -> str:
-    """The 6 digits both screens show. Keys are base64 of the raw 32 bytes, as sent."""
-    text = "\n".join([CHECK_PREFIX, device_id, identity_public, server_public, plugin_public])
+# Every hash input is the exact UTF-8 of the strings as sent (keys and nonce
+# base64 of the raw bytes), joined with "\n" after a fixed prefix.
+
+def commitment(plugin_public: str, nonce: str) -> str:
+    """What the plugin sends first: base64 SHA-256 of its key and nonce."""
+    text = "\n".join([COMMIT_PREFIX, plugin_public, nonce])
+    return b64(hashlib.sha256(text.encode("utf-8")).digest())
+
+
+def offer_message(device_id: str, server_public: str, commit: str) -> bytes:
+    """What the Mac's identity key signs in its answer."""
+    return (OFFER_PREFIX + device_id + ":" + server_public + ":" + commit).encode("utf-8")
+
+
+def check_number(device_id: str, identity_public: str, server_public: str, plugin_public: str,
+                 nonce: str) -> str:
+    """The 6 digits both screens show, once the reveal has been accepted."""
+    text = "\n".join([CHECK_PREFIX, device_id, identity_public, server_public, plugin_public, nonce])
     digest = hashlib.sha256(text.encode("utf-8")).digest()
     return "%06d" % (int.from_bytes(digest[:4], "big") % 1_000_000)
 
@@ -143,7 +166,9 @@ def pair_on_lan(base: str, name: str, version: str, show_check: Callable[[str], 
     base = base.rstrip("/")
     mine = X25519PrivateKey.generate()
     plugin_public = b64(mine.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw))
-    asked = json.dumps({"publicKey": plugin_public, "name": name, "app": app, "version": version}).encode("utf-8")
+    nonce = b64(secrets.token_bytes(NONCE_BYTES))
+    commit = commitment(plugin_public, nonce)
+    asked = json.dumps({"v": 2, "commit": commit, "name": name, "app": app, "version": version}).encode("utf-8")
     status, raw = http("POST", base + "/api/connectors/pair", asked)
     answer = _json(raw)
     if status != 200:
@@ -151,13 +176,21 @@ def pair_on_lan(base: str, name: str, version: str, show_check: Callable[[str], 
     try:
         offer = {k: answer[k] for k in ("pairId", "pollSecret", "deviceId", "publicKey", "sig", "identity")}
         identity = Ed25519PublicKey.from_public_bytes(unb64(offer["identity"]))
-        identity.verify(unb64(offer["sig"]), enrol_message(offer["deviceId"], offer["publicKey"], plugin_public))
+        identity.verify(unb64(offer["sig"]), offer_message(offer["deviceId"], offer["publicKey"], commit))
         server = X25519PublicKey.from_public_bytes(unb64(offer["publicKey"]))
         key = device_key(mine.exchange(server), offer["deviceId"])
-    except (KeyError, ValueError, InvalidSignature) as e:
+    except (KeyError, ValueError, TypeError, InvalidSignature) as e:
         raise PairingError("bad-answer", str(e))
 
-    show_check(check_number(offer["deviceId"], offer["identity"], offer["publicKey"], plugin_public))
+    # Only now, with the Mac's key signed over our commitment, do we reveal.
+    shown = json.dumps({"publicKey": plugin_public, "nonce": nonce}).encode("utf-8")
+    status, raw = http("POST", base + "/api/connectors/pair/" + offer["pairId"] + "/reveal", shown,
+                       {"x-khayt-poll": offer["pollSecret"]})
+    if status != 200:
+        answer = _json(raw)
+        raise PairingError(answer.get("reason") or answer.get("state") or "http-%d" % status)
+
+    show_check(check_number(offer["deviceId"], offer["identity"], offer["publicKey"], plugin_public, nonce))
 
     started = clock()
     while clock() - started < POLL_FOR:
