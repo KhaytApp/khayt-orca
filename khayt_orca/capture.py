@@ -67,3 +67,13 @@ def build(file_path: str, *, intent: str = "inbox", job_id: Optional[str] = None
     if thumbnail is not None and len(thumbnail.get("b64", "")) * 3 // 4 <= MAX_THUMB_BYTES:
         out["thumbnail"] = thumbnail
     return out
+
+
+def from_file(file_path: str, **kw) -> dict:
+    """`build`, with the slicer's own time, layers, tool changes and slots read from the file
+    (`gcode.figures`). A binary G-code or a .gcode.3mf carries no text summary to read."""
+    from . import gcode
+    if file_type(os.path.basename(file_path)) == "gcode":
+        for key, value in gcode.figures(file_path).items():
+            kw.setdefault({"timeSec": "time_sec"}.get(key, key), value)
+    return build(file_path, **kw)
