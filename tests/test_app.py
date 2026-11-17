@@ -165,6 +165,21 @@ class TabScript(unittest.TestCase):
         self.assertEqual(got["ar"]["sent"][1], "a.gcode | أخذه المتجر | ")
         self.assertEqual(got["en"]["check"], "418 207")
 
+    def test_stage_and_machine_words_are_the_macs(self):
+        # Copied from Khayt (renderer/locales/{en,ar}.js queue.*, Words.swift
+        # mac.life_badge_*), so the queue reads the same in the tab as on the Mac.
+        mac = {
+            "en": {"pending": "Pending", "printing": "Printing", "post": "Post-Processing", "qc": "QC",
+                   "on_hold": "On Hold", "service": "Under service", "retired": "Retired"},
+            "ar": {"pending": "بانتظار", "printing": "قيد الطباعة", "post": "ما بعد الطباعة",
+                   "qc": "مراقبة الجودة", "on_hold": "متوقف مؤقتاً", "service": "تحت الصيانة",
+                   "retired": "خارج الخدمة"},
+        }
+        for lang, words in mac.items():
+            block = tab.HTML.split("  " + lang + ": {")[1].split("\n  },")[0]
+            for key, word in words.items():
+                self.assertIn(key + ": '" + word + "'", block, lang + " " + key)
+
     def test_arabic_never_spells_khayt_in_latin(self):
         # Turki's ruling (Nov 10): in Arabic the name is خيط; the Mac's button is «إقران برنامج تقطيع».
         ar = tab.HTML.split("ar: {")[1].split("\n  },")[0]
