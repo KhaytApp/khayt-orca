@@ -16,7 +16,8 @@ The rules copied from Orca 2.5.1 (src/slic3r/plugin/PluginAuditManager.cpp):
   under a granted connection are not asked again.
 
 Modes: "plugin" (the plugin as shipped), "home" (storage outside Orca's folder),
-"urllib" (requests through urllib): the last two prove the counter bites.
+"urllib" (requests through urllib), "lazy" (no imports at load, as on Nov 17):
+the last three prove the counter bites.
 """
 
 import json
@@ -63,15 +64,61 @@ server = subprocess.Popen([sys.executable, "-c", SERVER], stdout=subprocess.PIPE
 port = int(server.stdout.readline())
 base = f"http://127.0.0.1:{port}"
 
-from khayt_orca import app, pairing, paths  # noqa: E402  (imported before the hook)
-from tests.test_app import FakeShop, PAIRED  # noqa: E402
+# What OrcaSlicer does at load, on its loader thread, where it does not ask: import
+# the plugin (which imports everything its threads need, warm.py). Nothing else of
+# the plugin's is imported before the hook, so a lazy import later is counted:
+# importing writes bytecode through a file descriptor, a pathless `open`, which Orca
+# asks about and refuses off the main thread (36 boxes on Nov 17).
+from tests.fake_orca_module import fake_orca  # noqa: E402  (stdlib only)
+if MODE == "lazy":                 # the Nov 17 build: nothing imported ahead
+    import khayt_orca.warm  # noqa: E402  (before `orca` exists, so the package skips the plugin)
+    khayt_orca.warm.warm = lambda: None
+sys.modules["orca"] = fake_orca()
+import khayt_orca.plugin as plugin_module  # noqa: E402
+plugin_module.KhaytPlugin().register_capabilities()
+from khayt_orca import app, pairing, paths, transport  # noqa: E402  (already loaded by the plugin)
+
+# Orca runs with the user's home as the working folder, and '' on sys.path, so a
+# lazy import scans it: model that with a folder outside every allowed root.
+home_cwd = os.path.join(tmp, "home")
+os.makedirs(home_cwd)
+os.chdir(home_cwd)
+sys.path.insert(0, "")
 
 root = home if MODE == "home" else paths.storage_root(here=plugin_file)
+
+
+class FakeShop:
+    """Answers the controller's calls without a network (stdlib only)."""
+    def __init__(self, base, paired):
+        pass
+
+    def announce(self, capture):
+        return {"sliceId": "S" * 16, "state": "awaiting-file"}
+
+    def upload(self, slice_id, path, sha):
+        return {"state": "in-inbox"}
+
+    def queue(self, etag=None):
+        return {"v": 1, "jobs": []}, "etag-1"
+
+    def unpair(self):
+        pass
+
+    def slice_state(self, slice_id):
+        return {"state": "in-inbox"}
+
+
+PAIRED = pairing.Paired(base="http://127.0.0.1:1", device_id="dev_FakePluginDevice01",
+                        key=pairing.b64(bytes(32)), mac_identity="")
+
 
 # -- the hook ------------------------------------------------------------------
 # Python's own bytecode cache: Orca puts it inside its data folder (python/pycache).
 READ_ONLY = {os.path.realpath(p) for p in (sys.prefix, sys.base_prefix, REPO, sys.pycache_prefix) if p}
 RW = {os.path.realpath(data), os.path.realpath(gdir)}
+if sys.pycache_prefix:            # Orca's bytecode cache is inside its data folder
+    RW.add(os.path.realpath(sys.pycache_prefix))
 asked = []
 remembered = set()
 granted_hosts = set()
@@ -87,7 +134,7 @@ def ask(kind, target, remember=True):
     key = (kind, target)
     if remember and key in remembered:
         return
-    asked.append({"kind": kind, "target": target})
+    asked.append({"kind": kind, "target": target, "thread": threading.current_thread().name})
     if remember:
         remembered.add(key)
 
@@ -110,9 +157,14 @@ def hook(event, args):
         return
     busy.on = True
     try:
-        if event == "open":
+        if event == "import":
+            ask("import", str(args[0]), remember=False)
+        elif event == "open":
             path, mode, flags = args
             if isinstance(path, int):
+                # open() on a file descriptor names no path: Orca asks about the
+                # "open" event itself (an event grant), once, remembered.
+                ask("fs-event", "open on a file descriptor")
                 return
             writes = (mode and any(c in mode for c in "wax+")) or (
                 mode is None and flags & (os.O_WRONLY | os.O_RDWR | os.O_CREAT))
@@ -140,38 +192,70 @@ def hook(event, args):
         busy.on = False
 
 
-FakeShop.calls, FakeShop.queue_answer = [], ({"v": 1, "jobs": []}, "etag-1")
-FakeShop.slice_states = [{"state": "in-inbox"}] * 1000
 import atexit  # noqa: E402
 atexit.register(server.terminate)
 sys.addaudithook(hook)
 
-# -- what the plugin does: pair, send, then 10 minutes of the worker's ticks ------
+# -- what the plugin does, on its own threads as in Orca --------------------------
+def on_thread(fn):
+    out = {}
+    def run():
+        try:
+            out["result"] = fn()
+        except Exception as e:  # noqa: BLE001 - the stand-in Mac answers {} to everything
+            out["error"] = e
+    t = threading.Thread(target=run, name="plugin-worker")
+    t.start()
+    t.join()
+    return out
+
+
 if MODE == "urllib":
     import urllib.request
 
-    def via_urllib(method, url, body=None, headers=None, timeout=10.0):
+    def http(method, url, body=None, headers=None, timeout=10.0):
         req = urllib.request.Request(url, data=body, method=method, headers=headers or {})
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return r.status, r.read()
-    http = via_urllib
 else:
     http = pairing._http
-http("POST", base + "/api/connectors/pair", b"{}")
-for _ in range(5):
-    http("GET", base + "/api/connectors/pair/PAIR123")
-http("POST", base + "/api/connectors/pair/PAIR123/reveal", b"{}")
+
+
+def pair():
+    # The real pairing (keys, the commit) until the stand-in's {} stops it.
+    try:
+        pairing.pair_on_lan(base, "OrcaSlicer", "0.1.0", lambda check: None, http=http, sleep=lambda s: None)
+    except pairing.PairingError:
+        pass
+    for _ in range(5):
+        http("GET", base + "/api/connectors/pair/PAIR123")
+    http("POST", base + "/api/connectors/pair/PAIR123/reveal", b"{}")
+
 
 c = app.Controller(root, shop_factory=FakeShop)
-c.paired = PAIRED
-c._save_paired(PAIRED)
-c.send(gcode, slicer={"name": "OrcaSlicer", "plugin": "0.1.0"}, printer={"preset": "U1"}, process={"preset": None})
-for _ in range(120):               # the worker wakes every 5 s: 10 minutes
-    c.deliver()
-    c.refresh_queue()
-    c.refresh_sent()
-    c.view()
-c.forget_pairing(tell_the_mac=False)
+
+
+def work():
+    c.paired = PAIRED
+    c._save_paired(PAIRED)
+    sealed = transport.seal(b"{}", bytes(32), b"POST /api/connectors/slices")
+    transport.unseal(sealed, bytes(32), b"POST /api/connectors/slices")
+    c.send(gcode, slicer={"name": "OrcaSlicer", "plugin": "0.1.0"}, printer={"preset": "U1"}, process={"preset": None})
+    for _ in range(120):               # the worker wakes every 5 s: 10 minutes
+        c.deliver()
+        c.refresh_queue()
+        c.refresh_sent()
+        c.view()
+    c.forget_pairing(tell_the_mac=False)
+
+
+if MODE != "urllib":
+    pairing.reach(base)        # the Pair click, on Orca's main thread (plugin.py)
+paired_run = on_thread(pair)
+work_run = on_thread(work)
+for name, run_ in (("pair", paired_run), ("work", work_run)):
+    if "error" in run_:
+        print(f"{name}: {type(run_['error']).__name__}: {run_['error']}", file=sys.stderr)
 
 server.terminate()
 print(json.dumps({"mode": MODE,

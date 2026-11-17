@@ -67,8 +67,10 @@ class Controller:
                 pass
             return
         tmp = path + ".tmp"
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
+        # open() by PATH (owner-only via the opener): Orca asks about an open of a
+        # bare file descriptor, and refuses it outright on a background thread.
+        with open(tmp, "w", encoding="utf-8",
+                  opener=lambda p, flags: os.open(p, flags, 0o600)) as f:
             json.dump(p.to_json(), f)
         os.replace(tmp, path)
 

@@ -12,32 +12,7 @@ import types
 import unittest
 
 
-def fake_orca():
-    o = types.ModuleType("orca")
-    o.registered, o.permissions = [], {}
-
-    class base:
-        pass
-
-    class Result:
-        def __init__(self, kind, message=""):
-            self.kind, self.message = kind, message
-
-    o.base = base
-    o.plugin = lambda cls: cls
-    o.request_permissions = lambda **kw: o.permissions.update(kw)
-    o.register_capability = lambda cls: o.registered.append(cls)
-    o.ExecutionResult = types.SimpleNamespace(
-        success=lambda message="", data="": Result("success", message),
-        skipped=lambda message="": Result("skipped", message),
-        failure=lambda status, message, data="": Result("failure", message))
-    o.slicing = types.SimpleNamespace(SlicingPipelineCapabilityBase=type("SlicingBase", (), {}))
-
-    class PagesBase:
-        def post_message(self, data):
-            self.sent = getattr(self, "sent", []) + [data]
-    o.pages = types.SimpleNamespace(PagesPluginCapabilityBase=PagesBase)
-    return o
+from tests.fake_orca_module import fake_orca  # noqa: E402
 
 
 class Entry(unittest.TestCase):

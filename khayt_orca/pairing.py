@@ -163,6 +163,22 @@ def _http(method: str, url: str, body: Optional[bytes] = None, headers: Optional
         conn.close()
 
 
+def reach(base: str, timeout: float = 3.0) -> None:
+    """Open (and close) one connection to the Mac. Call it on OrcaSlicer's main
+    thread before pairing: there Orca can ask the user about this host inline and
+    remember the answer. Asked first from a background thread, Orca refuses the
+    connection at once and only queues its question (PermissionError here).
+    """
+    u = urllib.parse.urlsplit(base)
+    if u.scheme != "http" or not u.hostname:
+        raise ValueError("the shop's address is http://host:port on this network")
+    conn = http.client.HTTPConnection(u.hostname, u.port or 80, timeout=timeout)
+    try:
+        conn.connect()
+    finally:
+        conn.close()
+
+
 def pair_on_lan(base: str, name: str, version: str, show_check: Callable[[str], None],
                 http=_http, sleep=time.sleep, clock=time.monotonic, app: str = "OrcaSlicer") -> Paired:
     """Ask the Mac at `base` (http://host:port) to pair, show the number, wait for the owner.
