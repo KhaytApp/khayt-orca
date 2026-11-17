@@ -36,3 +36,4 @@ class Compat(unittest.TestCase):
         self.assertIn("--draft", wf)
         self.assertNotIn("gh release edit", wf)
         self.assertIn("MIN_KHAYT_MAC", wf)
+        self.assertIn("tests.test_orca_permissions", wf, "the permission budget gates a release")

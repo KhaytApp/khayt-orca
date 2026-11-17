@@ -34,7 +34,9 @@ def manifest(sha256: str, wheel: str) -> dict:
         "protocol": PROTOCOL,
         # Scopes in the Mac's own words; printing is not a scope (v1 never prints).
         "scopes": ["slices:send", "queue:read"],
-        "hostPermissions": ["threading", "fs_readwrite:~/.khayt-orca"],
+        # Asked up front: the worker thread only. Its files are in Orca's own data
+        # folder (no question), and the Mac is asked about once, by host.
+        "hostPermissions": ["threading"],
         "source": "https://github.com/KhaytApp/khayt-orca",
         "licence": "MIT",
     }
