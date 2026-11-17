@@ -22,7 +22,7 @@ input{font:inherit;padding:5px 8px;border-radius:6px;border:1px solid var(--line
 .check{font:600 28px ui-monospace,Menlo,monospace;letter-spacing:4px;margin:8px 0}
 [hidden]{display:none}
 </style></head><body>
-<h1>Khayt</h1><p class="sub" id="shop" data-w="tagline"></p>
+<h1 data-w="brand"></h1><p class="sub" id="shop" data-w="tagline"></p>
 <p class="warn" id="problem" hidden></p>
 
 <div class="card" id="pairCard" hidden><h2 data-w="pairTitle"></h2><div class="row" style="flex-wrap:wrap">
@@ -39,7 +39,7 @@ input{font:inherit;padding:5px 8px;border-radius:6px;border:1px solid var(--line
 <script>
 const $ = (id) => document.getElementById(id);
 const WORDS = {
-  en: {tagline: "Send sliced files to your shop's inbox.", pairTitle: 'Pair with your shop',
+  en: {brand: 'Khayt', tagline: "Send sliced files to your shop's inbox.", pairTitle: 'Pair with your shop',
     pairHow: 'In Khayt on the Mac, click Pair a slicer, then enter the address it shows.', pair: 'Pair',
     checkHow: 'Check that the Mac shows the same number, then approve there:', queue: 'Shop queue',
     machines: 'Machines', sent: 'Sent from this computer', refresh: 'Refresh', unpair: 'Unpair',
@@ -49,14 +49,14 @@ const WORDS = {
     'in-inbox': 'In the Khayt inbox', 'left-inbox': 'Taken by the shop', expired: 'No longer in the inbox', gone: 'No longer in the inbox',
     stage: {pending: 'Waiting', printing: 'Printing', post: 'Finishing', qc: 'Checking', on_hold: 'On hold'},
     machine: {active: 'Ready', service: 'In service', retired: 'Retired'}},
-  ar: {tagline: 'أرسل الملفات المقطّعة إلى صندوق متجرك.', pairTitle: 'الاقتران بمتجرك',
-    pairHow: 'في Khayt على الـMac اضغط «اقتران برنامج تقطيع»، ثم أدخل العنوان الذي يظهر.', pair: 'اقتران',
+  ar: {brand: 'خيط', tagline: 'أرسل الملفات المقطّعة إلى صندوق متجرك.', pairTitle: 'الإقران بمتجرك',
+    pairHow: 'في تطبيق خيط على الـMac اضغط «إقران برنامج تقطيع»، ثم أدخل العنوان الذي يظهر.', pair: 'إقران',
     checkHow: 'تأكد أن الـMac يعرض الرقم نفسه، ثم وافق هناك:', queue: 'قائمة أعمال المتجر',
-    machines: 'الآلات', sent: 'المُرسَل من هذا الجهاز', refresh: 'تحديث', unpair: 'إلغاء الاقتران',
+    machines: 'الآلات', sent: 'المُرسَل من هذا الجهاز', refresh: 'تحديث', unpair: 'إلغاء الإقران',
     inInbox: (n) => '· ' + n + ' في الصندوق', noJobs: 'لا توجد أعمال مفتوحة.', more: (n) => 'و' + n + ' غيرها',
-    problem: 'Khayt: ', pairing: 'الاقتران: ',
-    new: 'بانتظار الإرسال', announced: 'جارٍ الإرسال…', done: 'في صندوق Khayt', failed: 'لم يُرسَل',
-    'in-inbox': 'في صندوق Khayt', 'left-inbox': 'أخذه المتجر', expired: 'لم يعد في الصندوق', gone: 'لم يعد في الصندوق',
+    problem: 'خيط: ', pairing: 'الإقران: ',
+    new: 'بانتظار الإرسال', announced: 'جارٍ الإرسال…', done: 'في صندوق خيط', failed: 'لم يُرسَل',
+    'in-inbox': 'في صندوق خيط', 'left-inbox': 'أخذه المتجر', expired: 'لم يعد في الصندوق', gone: 'لم يعد في الصندوق',
     stage: {pending: 'بالانتظار', printing: 'قيد الطباعة', post: 'التشطيب', qc: 'الفحص', on_hold: 'معلّق'},
     machine: {active: 'جاهزة', service: 'في الصيانة', retired: 'متقاعدة'}},
 };

@@ -164,3 +164,10 @@ class TabScript(unittest.TestCase):
         self.assertEqual(got["en"]["jobs"][0], "J-1001 | Bracket_PLA.gcode | U1-01 | Printing")
         self.assertEqual(got["ar"]["sent"][1], "a.gcode | أخذه المتجر | ")
         self.assertEqual(got["en"]["check"], "418 207")
+
+    def test_arabic_never_spells_khayt_in_latin(self):
+        # Turki's ruling (Nov 10): in Arabic the name is خيط; the Mac's button is «إقران برنامج تقطيع».
+        ar = tab.HTML.split("ar: {")[1].split("\n  },")[0]
+        self.assertNotIn("Khayt", ar)
+        self.assertNotIn("اقتران", ar, "the Mac's word is إقران")
+        self.assertIn("إقران برنامج تقطيع", ar)
