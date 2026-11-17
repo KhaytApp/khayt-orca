@@ -50,6 +50,8 @@ class Entry(unittest.TestCase):
         for m in [m for m in sys.modules if m.startswith("khayt_orca")]:
             del sys.modules[m]
         self.plugin = importlib.import_module("khayt_orca.plugin")
+        # Not installed under an orca_plugins folder here: stand in for Orca's data folder.
+        self.plugin.storage_root = lambda: os.path.join(self.tmp.name, "OrcaSlicer", "khayt-orca")
 
     def tearDown(self):
         if self.plugin._controller:
@@ -61,12 +63,12 @@ class Entry(unittest.TestCase):
             os.environ["HOME"] = self.home
         self.tmp.cleanup()
 
-    def test_registers_the_export_step_and_the_tab_and_asks_for_a_thread_and_its_folder(self):
+    def test_registers_the_export_step_and_the_tab_and_asks_only_for_a_thread(self):
         import orca
         self.plugin.KhaytPlugin().register_capabilities()
         self.assertEqual([c().get_name() for c in orca.registered], ["Khayt: send to inbox", "Khayt"])
-        self.assertEqual(orca.permissions, {"threading": True,
-                                            "fs_readwrite": [os.path.join(self.tmp.name, ".khayt-orca")]})
+        # Its files are inside Orca's data folder, which needs no question.
+        self.assertEqual(orca.permissions, {"threading": True})
 
     def test_an_export_before_pairing_is_skipped_not_failed(self):
         p = os.path.join(self.tmp.name, "a.gcode")

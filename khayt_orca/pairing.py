@@ -23,8 +23,8 @@ import hmac
 import json
 import secrets
 import time
-import urllib.error
-import urllib.request
+import http.client
+import urllib.parse
 from dataclasses import dataclass
 from typing import Callable, Optional
 
@@ -140,14 +140,27 @@ class PairingError(Exception):
 
 def _http(method: str, url: str, body: Optional[bytes] = None, headers: Optional[dict] = None,
           timeout: float = 10.0):
-    request = urllib.request.Request(url, data=body, method=method, headers=headers or {})
+    """One plain HTTP request, through http.client and never urllib.
+
+    OrcaSlicer asks the user about a plugin's network access. It judges a
+    `urllib.Request` by its full URL and remembers the answer for that URL only,
+    so every route (and pairing polls several) asked again; `http.client.connect`
+    is judged by the host and remembered for it: one question per Mac.
+    """
+    u = urllib.parse.urlsplit(url)
+    if u.scheme != "http" or not u.hostname:
+        raise ValueError("the shop's address is http://host:port on this network")
+    path = (u.path or "/") + ("?" + u.query if u.query else "")
+    sent = dict(headers or {})
     if body is not None:
-        request.add_header("Content-Type", "application/json")
+        sent.setdefault("Content-Type", "application/json")
+    conn = http.client.HTTPConnection(u.hostname, u.port or 80, timeout=timeout)
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as reply:
-            return reply.status, reply.read()
-    except urllib.error.HTTPError as e:
-        return e.code, e.read()
+        conn.request(method, path, body=body, headers=sent)
+        reply = conn.getresponse()
+        return reply.status, reply.read()
+    finally:
+        conn.close()
 
 
 def pair_on_lan(base: str, name: str, version: str, show_check: Callable[[str], None],
