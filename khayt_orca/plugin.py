@@ -18,6 +18,7 @@ import threading
 import orca  # provided by OrcaSlicer
 
 from . import app, tab
+from .compat import VERSION
 from .paths import storage_root
 from . import pairing
 from .pairing import PairingError
@@ -26,7 +27,6 @@ from .warm import warm
 # Everything the plugin's threads use, imported now, at load (see warm.py).
 warm()
 
-VERSION = "0.1.0"
 _controller = None
 
 

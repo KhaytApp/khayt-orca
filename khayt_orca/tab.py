@@ -44,7 +44,7 @@ const WORDS = {
     checkHow: 'Check that the Mac shows the same number, then approve there:', queue: 'Shop queue',
     machines: 'Machines', sent: 'Sent from this computer', refresh: 'Refresh', unpair: 'Unpair',
     inInbox: (n) => '· ' + n + ' in the inbox', noJobs: 'No open jobs.', more: (n) => 'and ' + n + ' more',
-    problem: 'Khayt: ', pairing: 'Pairing: ',
+    problem: 'Khayt: ', pairing: 'Pairing: ', 'khayt-too-old': 'Update Khayt on the Mac: this version has no slicer routes.',
     pair_permission: 'OrcaSlicer needs your OK to reach the Mac. Allow it, then click Pair again.',
     pair_offline: 'The Mac did not answer. Check the address and that Khayt is open, then click Pair again.',
     pair_address: 'Type the address the Mac shows, like 192.0.2.20:3219.',
@@ -57,7 +57,7 @@ const WORDS = {
     checkHow: 'تأكد أن الـMac يعرض الرقم نفسه، ثم وافق هناك:', queue: 'قائمة أعمال المتجر',
     machines: 'الآلات', sent: 'المُرسَل من هذا الجهاز', refresh: 'تحديث', unpair: 'إلغاء الإقران',
     inInbox: (n) => '· ' + n + ' في الصندوق', noJobs: 'لا توجد أعمال مفتوحة.', more: (n) => 'و' + n + ' غيرها',
-    problem: 'خيط: ', pairing: 'الإقران: ',
+    problem: 'خيط: ', pairing: 'الإقران: ', 'khayt-too-old': 'حدّث تطبيق خيط على الـMac: هذا الإصدار لا يستقبل برامج التقطيع.',
     pair_permission: 'يحتاج OrcaSlicer موافقتك للوصول إلى الـMac. اسمح بذلك ثم اضغط «إقران» مرة أخرى.',
     pair_offline: 'لم يردّ الـMac. تحقّق من العنوان ومن أن تطبيق خيط مفتوح، ثم اضغط «إقران» مرة أخرى.',
     pair_address: 'اكتب العنوان الذي يعرضه الـMac، مثل 192.0.2.20:3219.',
@@ -80,7 +80,7 @@ function draw(v) {
   $('queueCard').hidden = !v.paired; $('machinesCard').hidden = !v.paired || !v.machines.length;
   $('sentCard').hidden = !v.sent.length;
   $('shop').textContent = v.shop ? v.shop : W.tagline;
-  $('problem').hidden = !v.problem; $('problem').textContent = v.problem ? W.problem + v.problem : '';
+  $('problem').hidden = !v.problem; $('problem').textContent = v.problem ? (W[v.problem] || W.problem + v.problem) : '';
   $('inbox').textContent = v.inboxWaiting != null ? W.inInbox(v.inboxWaiting) : '';
   $('jobs').replaceChildren(); $('machines').replaceChildren(); $('sent').replaceChildren();
   for (const j of v.jobs) row($('jobs'), [[j.number, 'mono'], [j.file || '', 'grow muted'], [j.machine || '', 'muted'], [W.stage[j.stage] || j.stage, '']]);

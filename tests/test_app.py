@@ -127,6 +127,12 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(self.c.view()["problem"], "unpaired")
         self.assertEqual(app.Controller(self.c.root, shop_factory=FakeShop).paired, None, "and after a restart")
 
+    def test_a_mac_without_the_routes_says_update_khayt(self):
+        FakeShop.queue_answer = ShopError(404, "error")
+        self.c.refresh_queue()
+        self.assertEqual(self.c.view()["problem"], "khayt-too-old")
+        self.assertIsNotNone(self.c.paired, "still paired: the Mac is older, not gone")
+
     def test_unpair_tells_the_mac_then_forgets(self):
         self.c.forget_pairing()
         self.assertEqual(FakeShop.calls, ["unpair"])
