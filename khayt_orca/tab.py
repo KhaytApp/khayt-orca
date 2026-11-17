@@ -50,8 +50,9 @@ const WORDS = {
     pair_address: 'Type the address the Mac shows, like 192.0.2.20:3219.',
     new: 'Waiting to send', announced: 'Sending…', done: 'In the Khayt inbox', failed: 'Not sent',
     'in-inbox': 'In the Khayt inbox', 'left-inbox': 'Taken by the shop', expired: 'No longer in the inbox', gone: 'No longer in the inbox',
-    stage: {pending: 'Waiting', printing: 'Printing', post: 'Finishing', qc: 'Checking', on_hold: 'On hold'},
-    machine: {active: 'Ready', service: 'In service', retired: 'Retired'}},
+    // The Mac's own words (Khayt queue.* and mac.life_badge_*): tests/test_app.py holds them equal.
+    stage: {pending: 'Pending', printing: 'Printing', post: 'Post-Processing', qc: 'QC', on_hold: 'On Hold'},
+    machine: {active: 'Ready', service: 'Under service', retired: 'Retired'}},
   ar: {brand: 'خيط', tagline: 'أرسل الملفات المقطّعة إلى صندوق متجرك.', pairTitle: 'الإقران بمتجرك',
     pairHow: 'في تطبيق خيط على الـMac اضغط «إقران برنامج تقطيع»، ثم أدخل العنوان الذي يظهر.', pair: 'إقران',
     checkHow: 'تأكد أن الـMac يعرض الرقم نفسه، ثم وافق هناك:', queue: 'قائمة أعمال المتجر',
@@ -63,8 +64,8 @@ const WORDS = {
     pair_address: 'اكتب العنوان الذي يعرضه الـMac، مثل 192.0.2.20:3219.',
     new: 'بانتظار الإرسال', announced: 'جارٍ الإرسال…', done: 'في صندوق خيط', failed: 'لم يُرسَل',
     'in-inbox': 'في صندوق خيط', 'left-inbox': 'أخذه المتجر', expired: 'لم يعد في الصندوق', gone: 'لم يعد في الصندوق',
-    stage: {pending: 'بالانتظار', printing: 'قيد الطباعة', post: 'التشطيب', qc: 'الفحص', on_hold: 'معلّق'},
-    machine: {active: 'جاهزة', service: 'في الصيانة', retired: 'متقاعدة'}},
+    stage: {pending: 'بانتظار', printing: 'قيد الطباعة', post: 'ما بعد الطباعة', qc: 'مراقبة الجودة', on_hold: 'متوقف مؤقتاً'},
+    machine: {active: 'جاهزة', service: 'تحت الصيانة', retired: 'خارج الخدمة'}},
 };
 const W = (navigator.language || 'en').toLowerCase().startsWith('ar') ? WORDS.ar : WORDS.en;
 if (W === WORDS.ar) { document.documentElement.lang = 'ar'; document.documentElement.dir = 'rtl'; }
