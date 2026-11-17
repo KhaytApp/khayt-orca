@@ -13,15 +13,18 @@ import os
 import pathlib
 import subprocess
 import sys
+import tempfile
 import unittest
 
 ROOT = pathlib.Path(__file__).parent.parent
 
 
 def counted(mode):
-    out = subprocess.run([sys.executable, "-m", "tests.orca_audit_run", mode], cwd=ROOT,
-                         capture_output=True, text=True, timeout=120,
-                         env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
+    # A fresh bytecode cache, as on a first install: each first import writes one.
+    with tempfile.TemporaryDirectory() as cache:
+        out = subprocess.run([sys.executable, "-m", "tests.orca_audit_run", mode], cwd=ROOT,
+                             capture_output=True, text=True, timeout=180,
+                             env={**os.environ, "PYTHONPYCACHEPREFIX": cache})
     assert out.returncode == 0, out.stderr[-2000:]
     return json.loads(out.stdout.strip().splitlines()[-1])
 
@@ -30,13 +33,22 @@ def counted(mode):
 class AsksOnce(unittest.TestCase):
     def test_pair_send_and_ten_minutes_of_polling_ask_once(self):
         got = counted("plugin")
-        self.assertEqual(got["fs"], [], "a file question: keep every file inside Orca's data folder")
+        self.assertEqual(got["fs"], [], "a file question or a lazy import on a plugin thread "
+                                        "(import at load, warm.py; files inside Orca's data folder; open by path)")
         self.assertEqual([a["target"] for a in got["net"]], ["host 127.0.0.1"],
                          "one network question, for the Mac's host, remembered")
+        # Asked from a background thread, Orca refuses at once and queues a box
+        # per attempt (Nov 17: 36 boxes): every question must come from the main
+        # thread, where Orca can ask inline.
+        self.assertEqual({a["thread"] for a in got["net"] + got["fs"]}, {"MainThread"})
 
     def test_the_counter_catches_files_outside_orcas_folder(self):
         got = counted("home")
         self.assertTrue(any(a["kind"] == "fs-create" for a in got["fs"]))
+
+    def test_the_counter_catches_a_lazy_import_on_a_thread(self):
+        got = counted("lazy")
+        self.assertTrue(any(a["kind"] == "import" and a["thread"] != "MainThread" for a in got["fs"]))
 
     def test_the_counter_catches_urllib(self):
         got = counted("urllib")

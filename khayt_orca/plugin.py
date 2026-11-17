@@ -19,7 +19,12 @@ import orca  # provided by OrcaSlicer
 
 from . import app, tab
 from .paths import storage_root
+from . import pairing
 from .pairing import PairingError
+from .warm import warm
+
+# Everything the plugin's threads use, imported now, at load (see warm.py).
+warm()
 
 VERSION = "0.1.0"
 _controller = None
@@ -85,6 +90,19 @@ class _Tab(orca.pages.PagesPluginCapabilityBase):
             base = str(data.get("address") or "").strip()
             if not base.startswith("http://"):
                 base = "http://" + base
+            # Here, on Orca's main thread, so Orca can ask about this host once
+            # and remember it; the pairing then runs on a thread.
+            try:
+                pairing.reach(base)
+            except PermissionError:
+                self.post_message({"type": "pair-failed", "reason": "permission"})
+                return
+            except ValueError:
+                self.post_message({"type": "pair-failed", "reason": "address"})
+                return
+            except OSError:
+                self.post_message({"type": "pair-failed", "reason": "offline"})
+                return
 
             def run():
                 try:
