@@ -18,16 +18,11 @@ import threading
 import orca  # provided by OrcaSlicer
 
 from . import app, tab
+from .paths import storage_root
 from .pairing import PairingError
 
 VERSION = "0.1.0"
 _controller = None
-
-
-def storage_root() -> str:
-    """The plugin's own folder: the pairing key, the outbox. Orca documents no plugin
-    data folder yet, so it is declared (fs_readwrite) and asked for once, at load."""
-    return os.path.join(os.path.expanduser("~"), ".khayt-orca")
 
 
 def controller() -> "app.Controller":
@@ -108,7 +103,9 @@ class _Tab(orca.pages.PagesPluginCapabilityBase):
 @orca.plugin
 class KhaytPlugin(orca.base):
     def register_capabilities(self):
-        # The shop's Mac is on this network; its address is asked for per host when first used.
-        orca.request_permissions(threading=True, fs_readwrite=[storage_root()])
+        # Asked once, at load: the worker thread. Files live in Orca's own data
+        # folder (no question needed), and the shop's Mac is asked about once, by
+        # host, the first time the plugin connects to it (http.client, never urllib).
+        orca.request_permissions(threading=True)
         orca.register_capability(_Capture)
         orca.register_capability(_Tab)
