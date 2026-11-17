@@ -45,6 +45,9 @@ const WORDS = {
     machines: 'Machines', sent: 'Sent from this computer', refresh: 'Refresh', unpair: 'Unpair',
     inInbox: (n) => '· ' + n + ' in the inbox', noJobs: 'No open jobs.', more: (n) => 'and ' + n + ' more',
     problem: 'Khayt: ', pairing: 'Pairing: ', 'khayt-too-old': 'Update Khayt on the Mac: this version has no slicer routes.',
+    pair_permission: 'OrcaSlicer needs your OK to reach the Mac. Allow it, then click Pair again.',
+    pair_offline: 'The Mac did not answer. Check the address and that Khayt is open, then click Pair again.',
+    pair_address: 'Type the address the Mac shows, like 192.0.2.20:3219.',
     new: 'Waiting to send', announced: 'Sending…', done: 'In the Khayt inbox', failed: 'Not sent',
     'in-inbox': 'In the Khayt inbox', 'left-inbox': 'Taken by the shop', expired: 'No longer in the inbox', gone: 'No longer in the inbox',
     stage: {pending: 'Waiting', printing: 'Printing', post: 'Finishing', qc: 'Checking', on_hold: 'On hold'},
@@ -55,6 +58,9 @@ const WORDS = {
     machines: 'الآلات', sent: 'المُرسَل من هذا الجهاز', refresh: 'تحديث', unpair: 'إلغاء الإقران',
     inInbox: (n) => '· ' + n + ' في الصندوق', noJobs: 'لا توجد أعمال مفتوحة.', more: (n) => 'و' + n + ' غيرها',
     problem: 'خيط: ', pairing: 'الإقران: ', 'khayt-too-old': 'حدّث تطبيق خيط على الـMac: هذا الإصدار لا يستقبل برامج التقطيع.',
+    pair_permission: 'يحتاج OrcaSlicer موافقتك للوصول إلى الـMac. اسمح بذلك ثم اضغط «إقران» مرة أخرى.',
+    pair_offline: 'لم يردّ الـMac. تحقّق من العنوان ومن أن تطبيق خيط مفتوح، ثم اضغط «إقران» مرة أخرى.',
+    pair_address: 'اكتب العنوان الذي يعرضه الـMac، مثل 192.0.2.20:3219.',
     new: 'بانتظار الإرسال', announced: 'جارٍ الإرسال…', done: 'في صندوق خيط', failed: 'لم يُرسَل',
     'in-inbox': 'في صندوق خيط', 'left-inbox': 'أخذه المتجر', expired: 'لم يعد في الصندوق', gone: 'لم يعد في الصندوق',
     stage: {pending: 'بالانتظار', printing: 'قيد الطباعة', post: 'التشطيب', qc: 'الفحص', on_hold: 'معلّق'},
@@ -90,7 +96,7 @@ orca.onMessage((m) => {
   if (m.type === 'view') draw(m.view);
   if (m.type === 'check') { $('checkRow').hidden = false; $('check').textContent = m.check; }
   if (m.type === 'paired' || m.type === 'pair-failed') { $('checkRow').hidden = true; $('pairBtn').disabled = false; }
-  if (m.type === 'pair-failed') { $('problem').hidden = false; $('problem').textContent = W.pairing + m.reason; }
+  if (m.type === 'pair-failed') { $('problem').hidden = false; $('problem').textContent = W['pair_' + m.reason] || (W.pairing + m.reason); }
 });
 $('pairBtn').onclick = () => { $('pairBtn').disabled = true; orca.postMessage({type: 'pair', address: $('addr').value, name: 'OrcaSlicer'}); };
 $('refresh').onclick = () => orca.postMessage({type: 'refresh'});
