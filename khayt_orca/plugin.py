@@ -18,9 +18,8 @@ import threading
 import orca  # provided by OrcaSlicer
 
 from . import app, tab
+from .compat import VERSION
 from .pairing import PairingError
-
-VERSION = "0.1.0"
 _controller = None
 
 

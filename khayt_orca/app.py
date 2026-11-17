@@ -133,6 +133,11 @@ class Controller:
             if e.reason in ("device-revoked", "device-unknown"):
                 self.forget_pairing(tell_the_mac=False)
                 self.problem = "unpaired"
+            elif e.status == 404:
+                # Paired, signed, and the queue route is not there: a Khayt for
+                # Mac older than this plugin (compat.MIN_KHAYT_MAC), or one with
+                # "Pair a slicer" switched off again.
+                self.problem = "khayt-too-old"
             elif e.status != 429:
                 self.problem = e.reason
         except OSError:

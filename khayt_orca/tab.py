@@ -44,7 +44,7 @@ const WORDS = {
     checkHow: 'Check that the Mac shows the same number, then approve there:', queue: 'Shop queue',
     machines: 'Machines', sent: 'Sent from this computer', refresh: 'Refresh', unpair: 'Unpair',
     inInbox: (n) => '· ' + n + ' in the inbox', noJobs: 'No open jobs.', more: (n) => 'and ' + n + ' more',
-    problem: 'Khayt: ', pairing: 'Pairing: ',
+    problem: 'Khayt: ', pairing: 'Pairing: ', 'khayt-too-old': 'Update Khayt on the Mac: this version has no slicer routes.',
     new: 'Waiting to send', announced: 'Sending…', done: 'In the Khayt inbox', failed: 'Not sent',
     'in-inbox': 'In the Khayt inbox', 'left-inbox': 'Taken by the shop', expired: 'No longer in the inbox', gone: 'No longer in the inbox',
     stage: {pending: 'Waiting', printing: 'Printing', post: 'Finishing', qc: 'Checking', on_hold: 'On hold'},
@@ -54,7 +54,7 @@ const WORDS = {
     checkHow: 'تأكد أن الـMac يعرض الرقم نفسه، ثم وافق هناك:', queue: 'قائمة أعمال المتجر',
     machines: 'الآلات', sent: 'المُرسَل من هذا الجهاز', refresh: 'تحديث', unpair: 'إلغاء الإقران',
     inInbox: (n) => '· ' + n + ' في الصندوق', noJobs: 'لا توجد أعمال مفتوحة.', more: (n) => 'و' + n + ' غيرها',
-    problem: 'خيط: ', pairing: 'الإقران: ',
+    problem: 'خيط: ', pairing: 'الإقران: ', 'khayt-too-old': 'حدّث تطبيق خيط على الـMac: هذا الإصدار لا يستقبل برامج التقطيع.',
     new: 'بانتظار الإرسال', announced: 'جارٍ الإرسال…', done: 'في صندوق خيط', failed: 'لم يُرسَل',
     'in-inbox': 'في صندوق خيط', 'left-inbox': 'أخذه المتجر', expired: 'لم يعد في الصندوق', gone: 'لم يعد في الصندوق',
     stage: {pending: 'بالانتظار', printing: 'قيد الطباعة', post: 'التشطيب', qc: 'الفحص', on_hold: 'معلّق'},
@@ -74,7 +74,7 @@ function draw(v) {
   $('queueCard').hidden = !v.paired; $('machinesCard').hidden = !v.paired || !v.machines.length;
   $('sentCard').hidden = !v.sent.length;
   $('shop').textContent = v.shop ? v.shop : W.tagline;
-  $('problem').hidden = !v.problem; $('problem').textContent = v.problem ? W.problem + v.problem : '';
+  $('problem').hidden = !v.problem; $('problem').textContent = v.problem ? (W[v.problem] || W.problem + v.problem) : '';
   $('inbox').textContent = v.inboxWaiting != null ? W.inInbox(v.inboxWaiting) : '';
   $('jobs').replaceChildren(); $('machines').replaceChildren(); $('sent').replaceChildren();
   for (const j of v.jobs) row($('jobs'), [[j.number, 'mono'], [j.file || '', 'grow muted'], [j.machine || '', 'muted'], [W.stage[j.stage] || j.stage, '']]);

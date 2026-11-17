@@ -1,0 +1,90 @@
+name: Release
+# Builds the plugin's wheel the same way twice and refuses to go on unless both
+# builds are byte-identical, then writes its manifest (sha256 + what it needs).
+#
+# - On a pull request: the reproducibility check only. Nothing is published.
+# - On a tag v<version>: also a DRAFT GitHub release with the wheel and the
+#   manifest attached. A person publishes it; nothing here does. Pushing the tag
+#   is the decision (Turki's, through Dev Hub) and this workflow never makes one.
+on:
+  pull_request:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: One version everywhere
+        run: |
+          python - <<'EOF'
+          import re, tomllib, os, sys
+          from khayt_orca import compat
+          v = tomllib.load(open("pyproject.toml", "rb"))["project"]["version"]
+          assert v == compat.VERSION, f"pyproject {v} != compat.VERSION {compat.VERSION}"
+          ref = os.environ.get("GITHUB_REF", "")
+          if ref.startswith("refs/tags/"):
+              tag = ref.rsplit("/", 1)[1]
+              assert tag == "v" + v, f"tag {tag} != v{v}"
+              assert compat.MIN_KHAYT_MAC, "MIN_KHAYT_MAC is not set: no Khayt release ships the routes yet"
+          print("version", v)
+          EOF
+      - name: Build twice, the same way
+        run: |
+          # Every timestamp in the wheel is the commit's.
+          export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+          python -m pip install "build==1.2.2" "setuptools>=68,<81" "wheel>=0.43"
+          python -m build --wheel --no-isolation --outdir dist-a .
+          rm -rf build *.egg-info
+          python -m build --wheel --no-isolation --outdir dist-b .
+          a=$(ls dist-a/*.whl); b=$(ls dist-b/*.whl)
+          sha_a=$(sha256sum "$a" | cut -d' ' -f1); sha_b=$(sha256sum "$b" | cut -d' ' -f1)
+          echo "a $sha_a  b $sha_b"
+          test "$sha_a" = "$sha_b" || { echo "the wheel is not reproducible"; exit 1; }
+          mkdir -p out && cp "$a" out/
+          python - "$a" "$sha_a" > out/khayt-orca.manifest.json <<'EOF'
+          import json, os, sys
+          from khayt_orca import compat
+          print(json.dumps(compat.manifest(sys.argv[2], os.path.basename(sys.argv[1])), indent=2))
+          EOF
+          cat out/khayt-orca.manifest.json
+      - name: The wheel holds the plugin and nothing else
+        run: |
+          python - <<'EOF'
+          import zipfile, glob
+          names = zipfile.ZipFile(glob.glob("out/*.whl")[0]).namelist()
+          code = [n for n in names if not n.startswith("khayt_orca-")]
+          assert all(n.startswith("khayt_orca/") for n in code), code
+          assert not any(n.startswith(("tests/", ".venv", "scratch")) for n in names), names
+          print("\n".join(names))
+          EOF
+      - uses: actions/upload-artifact@v4
+        with:
+          name: khayt-orca-wheel
+          path: out/
+
+  draft-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: khayt-orca-wheel
+          path: out
+      - name: A draft release, for a person to check and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" out/* --repo "$GITHUB_REPOSITORY" --draft \
+            --title "Khayt for OrcaSlicer $GITHUB_REF_NAME" \
+            --notes "Draft. Check the manifest's sha256 against the wheel before publishing."
