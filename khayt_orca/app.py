@@ -43,6 +43,7 @@ class Controller:
         self.queue: Optional[dict] = None
         self.etag: Optional[str] = None
         self.problem: Optional[str] = None
+        self.queue_at: Optional[float] = None   # when the Mac last answered the queue (epoch s)
         self._lock = threading.Lock()
         self._wake = threading.Event()
         self._stop = threading.Event()
@@ -130,6 +131,7 @@ class Controller:
             snap, etag = self.shop().queue(self.etag)
             if snap is not None:
                 self.queue, self.etag = snap, etag
+            self.queue_at = self.clock()        # a 304 is an answer too: the queue is current
             self.problem = None
         except transport.ShopError as e:
             if e.reason in ("device-revoked", "device-unknown"):
@@ -215,4 +217,7 @@ class Controller:
             "jobs": jobs, "more": q.get("more"), "machines": machines,
             "inboxWaiting": (q.get("inbox") or {}).get("waiting") if isinstance(q.get("inbox"), dict) else None,
             "sent": sent, "problem": self.problem,
+            # The tab says when the queue was last current, and that it is stale
+            # when a refresh fails (the last good queue stays on screen).
+            "updatedAt": int(self.queue_at * 1000) if self.queue_at else None,
         }
