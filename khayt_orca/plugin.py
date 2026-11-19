@@ -17,7 +17,7 @@ import threading
 
 import orca  # provided by OrcaSlicer
 
-from . import app, tab
+from . import app, capture, tab
 from .compat import VERSION
 from .paths import storage_root
 from . import pairing
@@ -55,11 +55,15 @@ class _Capture(orca.slicing.SlicingPipelineCapabilityBase):
                     return ctx.config_value(key)
                 except Exception:  # noqa: BLE001 - a missing key is just not said
                     return None
-            c.send(path, slicer={"name": "OrcaSlicer", "plugin": VERSION},
+            # `path` is Orca's working copy (".<pid>.<n>.gcode.pp"); the shop sees the
+            # final name, `ctx.output_name` (capture.export_name).
+            name = capture.export_name(path, getattr(ctx, "output_name", None))
+            c.send(path, name=name, slicer={"name": "OrcaSlicer", "plugin": VERSION},
                    printer={"preset": cfg("printer_settings_id")},
                    process={"preset": cfg("print_settings_id")})
-        except (OSError, ValueError) as e:
-            return orca.ExecutionResult.failure(1, f"Khayt: {e}")
+        except Exception as e:  # noqa: BLE001 - never raise into Orca's export: say why instead
+            # pybind: the status must be an orca.PluginResult member, not an int.
+            return orca.ExecutionResult.failure(orca.PluginResult.RecoverableError, f"Khayt: {e}")
         return orca.ExecutionResult.success(message="Queued for the Khayt inbox")
 
 
