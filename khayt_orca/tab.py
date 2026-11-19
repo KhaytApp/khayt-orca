@@ -2,6 +2,9 @@
 
 Everything shown arrives from the plugin as plain data (`Controller.view`) and is
 written with textContent, never as HTML: a file name typed by a person is text.
+
+The price card (Figma Qqxg4imtKVgC3TfNGcRGOk, page 20, frames 186:237…186:371)
+shows only figures the Mac sent; the page formats them and never computes one.
 """
 
 HTML = r"""<!doctype html>
@@ -28,9 +31,21 @@ button.primary{background:var(--brand);border-color:var(--brand);color:#fff}
 input{font:inherit;padding:5px 8px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--t1);width:220px}
 .check{font:600 28px ui-monospace,Menlo,monospace;letter-spacing:4px;margin:8px 0}
 [hidden]{display:none}
+/* The price card (page 20, P1–P3) */
+.phead{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line)}
+.phead b{font-size:13px;flex:1}
+.stepper{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.stepper button{border:0;border-radius:0;padding:2px 10px;background:var(--bg)}
+.stepper span{min-width:34px;text-align:center;font-family:ui-monospace,Menlo,monospace;font-weight:500}
+.big{font:600 18px ui-monospace,Menlo,monospace} .num{font-family:ui-monospace,Menlo,monospace}
+.foot{font-size:11px;margin:0;padding:8px 14px;border-top:1px solid var(--line)}
 </style></head><body>
 <h1 data-w="brand"></h1><p class="sub" id="shop" data-w="tagline"></p><p class="sub warn" id="fresh" hidden></p>
 <p class="warn" id="problem" hidden></p>
+
+<div class="card" id="priceCard" hidden><div class="phead"><b data-w="plate"></b><span class="muted" data-w="qtyLabel"></span>
+  <span class="stepper"><button id="qMinus" aria-label="−">−</button><span id="qty">1</span><button id="qPlus" aria-label="+">+</button></span></div>
+  <div id="priceBody"></div><p class="foot muted" id="priceFoot" hidden></p></div>
 
 <div class="card" id="pairCard" hidden><h2 data-w="pairTitle"></h2><div class="row" style="flex-wrap:wrap">
   <div class="grow muted" style="white-space:normal" data-w="pairHow"></div>
@@ -64,7 +79,14 @@ const WORDS = {
     'in-inbox': 'In the Khayt inbox', 'left-inbox': 'Taken by the shop', expired: 'No longer in the inbox', gone: 'No longer in the inbox',
     // The Mac's own words (Khayt queue.* and mac.life_badge_*): tests/test_app.py holds them equal.
     stage: {pending: 'Pending', printing: 'Printing', post: 'Post-Processing', qc: 'QC', on_hold: 'On Hold'},
-    machine: {active: 'Ready', service: 'Under service', retired: 'Retired'}},
+    machine: {active: 'Ready', service: 'Under service', retired: 'Retired'},
+    // The price card (Figma page 20, 186:237 / 186:261 / 186:294).
+    plate: 'This plate', qtyLabel: 'Qty', priceL: 'Price', costL: 'Cost', marginL: 'Margin',
+    money: (n, cur) => cur + ' ' + n, each: (q, u) => q + ' × ' + u, rounded: 'rounded',
+    ofPrice: (p) => p + '% of price', pricing: 'Pricing…', priced: "Priced by the shop's Mac", assumed: 'some rates assumed',
+    unreachable: "Couldn't reach the Mac · no price shown", retry: 'Retry',
+    unpriced: {'no-material': (t) => t ? 'Add a ' + t + ' spool in Khayt to price this' : 'Add a spool of this material in Khayt to price this',
+      'no-currency': "Set the shop's currency in Khayt to price this", 'bad-facts': "This plate can't be priced"}},
   ar: {brand: 'خيط', tagline: 'أرسل الملفات المقطّعة إلى صندوق متجرك.', pairTitle: 'الإقران بمتجرك',
     pairHow: 'في تطبيق خيط على الـMac اضغط «إقران برنامج تقطيع»، ثم أدخل العنوان الذي يظهر.', pair: 'إقران',
     checkHow: 'تأكد أن الـMac يعرض الرقم نفسه، ثم وافق هناك:', queue: 'قائمة أعمال المتجر',
@@ -82,7 +104,14 @@ const WORDS = {
     new: 'بانتظار الإرسال', announced: 'جارٍ الإرسال…', done: 'في صندوق خيط', failed: 'لم يُرسَل',
     'in-inbox': 'في صندوق خيط', 'left-inbox': 'أخذه المتجر', expired: 'لم يعد في الصندوق', gone: 'لم يعد في الصندوق',
     stage: {pending: 'بانتظار', printing: 'قيد الطباعة', post: 'ما بعد الطباعة', qc: 'مراقبة الجودة', on_hold: 'متوقف مؤقتاً'},
-    machine: {active: 'جاهزة', service: 'تحت الصيانة', retired: 'خارج الخدمة'}},
+    machine: {active: 'جاهزة', service: 'تحت الصيانة', retired: 'خارج الخدمة'},
+    // The price card (Figma page 20, 186:314 / 186:338 / 186:371). Western digits, as the Mac's.
+    plate: 'هذه اللوحة', qtyLabel: 'الكمية', priceL: 'السعر', costL: 'التكلفة', marginL: 'الهامش',
+    money: (n, cur) => n + ' ' + (cur === 'SAR' ? 'ر.س' : cur), each: (q, u) => q + ' × ' + u, rounded: 'مقرَّب',
+    ofPrice: (p) => p + '% من السعر', pricing: 'جارٍ التسعير…', priced: 'سعّره Mac المتجر', assumed: 'بعض المعدّلات مفترضة',
+    unreachable: 'تعذّر الوصول إلى الـMac · لا يُعرض سعر', retry: 'إعادة المحاولة',
+    unpriced: {'no-material': (t) => t ? 'أضف بكرة ' + t + ' في خيط لتسعير هذه اللوحة' : 'أضف بكرة من هذه الخامة في خيط لتسعير هذه اللوحة',
+      'no-currency': 'حدّد عملة المتجر في خيط لتسعير هذه اللوحة', 'bad-facts': 'تعذّر تسعير هذه اللوحة'}},
 };
 const W = (navigator.language || 'en').toLowerCase().startsWith('ar') ? WORDS.ar : WORDS.en;
 if (W === WORDS.ar) { document.documentElement.lang = 'ar'; document.documentElement.dir = 'rtl'; }
@@ -97,7 +126,50 @@ function row(parent, cells) {
   }
   parent.appendChild(r);
 }
+// Formatting only (2 decimals, grouped, Western digits); every figure is the Mac's.
+const amount = (n) => Number(n).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+const money = (n, cur) => W.money(amount(n), cur);
+let qty = 1, qtyTimer = null;
+function pricing() {
+  $('priceBody').replaceChildren(); $('priceFoot').hidden = true;
+  row($('priceBody'), [[W.pricing, 'grow muted']]);
+}
+function drawPrice(v) {
+  const p = v.paired ? v.price : null;
+  $('priceCard').hidden = !p;
+  if (!p || qtyTimer) return;          // a quantity being chosen: "Pricing…" until it is asked
+  qty = p.qty || 1; $('qty').textContent = String(qty);
+  $('qMinus').disabled = qty <= 1; $('qPlus').disabled = qty >= 999;
+  const body = $('priceBody'); body.replaceChildren(); $('priceFoot').hidden = true;
+  if (p.state === 'asking') return pricing();
+  if (p.state === 'unreachable') {
+    const retry = document.createElement('button'); retry.textContent = W.retry;
+    retry.onclick = () => { pricing(); orca.postMessage({type: 'price-retry'}); };
+    return row(body, [[W.unreachable, 'grow warn'], retry]);
+  }
+  if (p.state === 'unpriced') {
+    const say = W.unpriced[p.reason];
+    return row(body, [[typeof say === 'function' ? say(p.type) : (say || W.unpriced['bad-facts']), 'grow muted']]);
+  }
+  if (p.state !== 'on') return void ($('priceCard').hidden = true);
+  row(body, [[W.priceL, 'grow'], [money(p.total, p.currency), 'big']]);
+  const sub = [p.qty > 1 ? W.each(p.qty, money(p.unit, p.currency)) : '', p.rounded ? W.rounded : ''].filter(Boolean).join(' · ');
+  if (sub) row(body, [[sub, 'grow muted num']]);
+  if (p.cost) row(body, [[W.costL, 'grow'], [money(p.cost.total, p.currency), 'num']]);
+  if (p.margin) row(body, [[W.marginL, 'grow'], [(p.margin.amount != null ? money(p.margin.amount, p.currency) + ' · ' : '')
+    + W.ofPrice(Number(p.margin.pct).toFixed(1)), 'num']]);
+  $('priceFoot').hidden = false;
+  $('priceFoot').textContent = W.priced + (p.basis === 'measured' ? '' : ' · ' + W.assumed);
+}
+// Clicks change the number at once; the Mac is asked 600 ms after the last one.
+function step(by) {
+  qty = Math.max(1, Math.min(999, qty + by)); $('qty').textContent = String(qty);
+  $('qMinus').disabled = qty <= 1; $('qPlus').disabled = qty >= 999;
+  pricing(); clearTimeout(qtyTimer);
+  qtyTimer = setTimeout(() => { qtyTimer = null; orca.postMessage({type: 'qty', qty}); }, 600);
+}
 function draw(v) {
+  drawPrice(v);
   $('pairCard').hidden = v.paired; $('actions').hidden = !v.paired;
   $('queueCard').hidden = !v.paired; $('machinesCard').hidden = !v.paired || !v.machines.length;
   $('sentCard').hidden = !v.sent.length;
@@ -138,6 +210,7 @@ orca.onMessage((m) => {
 $('pairBtn').onclick = () => { $('pairBtn').disabled = true; orca.postMessage({type: 'pair', address: $('addr').value, name: 'OrcaSlicer'}); };
 $('refresh').onclick = () => { $('refresh').disabled = true; $('refresh').textContent = W.refreshing; orca.postMessage({type: 'refresh'}); };
 $('unpair').onclick = () => orca.postMessage({type: 'unpair'});
+$('qMinus').onclick = () => step(-1); $('qPlus').onclick = () => step(1);
 document.addEventListener('visibilitychange', () => orca.postMessage({type: document.hidden ? 'hidden' : 'ready'}));
 orca.postMessage({type: 'ready'});
 </script></body></html>

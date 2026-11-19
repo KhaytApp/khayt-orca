@@ -153,7 +153,16 @@ class FakeMac(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         body = self.rfile.read(int(self.headers["Content-Length"]))
         nonce = self._verify(body)
-        plain = transport.unseal(body, transport.seal_key(KEY, DEVICE), transport.seal_aad("POST", self.path))
+        key, aad = transport.seal_key(KEY, DEVICE), transport.seal_aad("POST", self.path)
+        plain = transport.unseal(body, key, aad)
+        if self.path == "/api/connectors/price":
+            if plain is None:
+                return self._answer(400, {"ok": False, "reason": "seal"}, nonce)
+            facts = json.loads(plain)
+            FakeMac.state["price-facts"] = facts
+            answer = {"prices": "on", "currency": "SAR", "qty": facts["qty"], "unit": 41.5,
+                      "total": 41.5 * facts["qty"], "rounded": False, "basis": "measured"}
+            return self._answer(200, transport.seal(json.dumps(answer).encode(), key, aad), nonce)
         cap = json.loads(plain)
         FakeMac.state["S" * 16] = {"state": "awaiting-file", "sha": cap["file"]["sha256"], "bytes": cap["file"]["bytes"]}
         self._answer(201, {"sliceId": "S" * 16, "state": "awaiting-file"}, nonce)
@@ -205,6 +214,16 @@ class AgainstAFakeMac(unittest.TestCase):
         self.assertEqual(snap["jobs"][0]["number"], "J-1")
         self.assertEqual(set(snap["jobs"][0]), {"id", "number", "stage", "machine", "file"})
         self.assertEqual(self.shop.queue(etag), (None, etag), "unchanged: a signed 304")
+
+    def test_price_is_sealed_both_ways(self):
+        got = self.shop.price({"v": 1, "qty": 3, "timeSec": 600, "filaments": [{"type": "PLA", "grams": 12.5}]})
+        self.assertEqual((got["prices"], got["qty"], got["total"]), ("on", 3, 124.5))
+        self.assertEqual(FakeMac.state["price-facts"]["filaments"], [{"type": "PLA", "grams": 12.5}])
+
+    def test_price_facts_over_8_kb_are_not_sent(self):
+        with self.assertRaises(ValueError):
+            self.shop.price({"v": 1, "qty": 1, "process": {"preset": "x" * 9000}})
+        self.assertNotIn("price-facts", FakeMac.state)
 
     def test_a_refused_head_sends_no_body(self):
         p = self.gcode()

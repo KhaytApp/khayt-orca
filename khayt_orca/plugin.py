@@ -138,6 +138,11 @@ class _Tab(orca.pages.PagesPluginCapabilityBase):
                 except OSError:
                     self.post_message({"type": "pair-failed", "reason": "offline"})
             threading.Thread(target=run, daemon=True).start()
+        elif kind == "qty":
+            # The page waits 600 ms after the last click before it says so.
+            threading.Thread(target=c.ask_price, args=(data.get("qty"),), daemon=True).start()
+        elif kind == "price-retry":
+            threading.Thread(target=c.ask_price, daemon=True).start()
         elif kind == "unpair":
             threading.Thread(target=c.forget_pairing, daemon=True).start()
 

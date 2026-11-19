@@ -107,6 +107,23 @@ class OrcaExport(Entry):
         self.assertEqual(os.listdir(c.outbox.root) if os.path.isdir(c.outbox.root) else [], [],
                          "no half-made outbox item left behind")
 
+    def test_quantity_and_retry_ask_the_mac_on_a_thread(self):
+        import threading
+        c = self._paired()
+        asked, done = [], threading.Event()
+
+        def ask(qty=None):
+            asked.append((qty, threading.current_thread() is threading.main_thread()))
+            if len(asked) == 2:
+                done.set()
+        c.ask_price = ask
+        t = self.plugin._Tab()
+        t.on_message({"type": "qty", "qty": 7})
+        t.on_message({"type": "price-retry"})
+        self.assertTrue(done.wait(5))
+        self.assertEqual(sorted(asked, key=str), sorted([(7, False), (None, False)], key=str),
+                         "never on Orca's main thread")
+
     def test_the_stand_in_is_as_strict_as_pybind(self):
         import orca
         with self.assertRaises(TypeError):
