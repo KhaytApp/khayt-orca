@@ -133,6 +133,21 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(self.c.view()["problem"], "khayt-too-old")
         self.assertIsNotNone(self.c.paired, "still paired: the Mac is older, not gone")
 
+    def test_updated_at_is_kept_when_a_refresh_fails(self):
+        self.assertIsNone(self.c.view()["updatedAt"])
+        FakeShop.queue_answer = ({"v": 1, "jobs": []}, "e1")
+        self.c.refresh_queue()
+        first = self.c.view()["updatedAt"]
+        self.assertIsInstance(first, int)
+        FakeShop.queue_answer = (None, "e1")          # 304: unchanged, still an answer
+        self.c.refresh_queue()
+        self.assertGreaterEqual(self.c.view()["updatedAt"], first)
+        kept = self.c.view()["updatedAt"]
+        FakeShop.queue_answer = OSError("no route")
+        self.c.refresh_queue()
+        v = self.c.view()
+        self.assertEqual((v["problem"], v["updatedAt"]), ("offline", kept), "the tab shows the last good time, amber")
+
     def test_unpair_tells_the_mac_then_forgets(self):
         self.c.forget_pairing()
         self.assertEqual(FakeShop.calls, ["unpair"])
@@ -162,13 +177,29 @@ class TabScript(unittest.TestCase):
     def test_the_page_runs_in_english_and_arabic(self):
         js = tab.HTML.split("<script>")[1].split("</script>")[0]
         out = subprocess.run(["node", str(pathlib.Path(__file__).parent / "tab_smoke.js")], input=js,
-                             capture_output=True, text=True, encoding="utf-8", check=True).stdout
+                             capture_output=True, text=True, encoding="utf-8", check=True,
+                             env={**os.environ, "TZ": "UTC"}).stdout
         got = json.loads(out)
         self.assertEqual(got["en"]["first"], {"type": "ready"}, "the page asks for its data on load")
         self.assertEqual(got["en"]["dir"], "ltr")
         self.assertEqual(got["ar"]["dir"], "rtl")
         self.assertEqual(got["en"]["jobs"][0], "J-1001 | Bracket_PLA.gcode | U1-01 | Printing")
-        self.assertEqual(got["ar"]["sent"][1], "a.gcode | أخذه المتجر | ")
+        # Figma page 20: a chip in the Mac's words, "—" for what is missing, a failed
+        # send says why in words (never the code), and when the queue was last current.
+        self.assertEqual(got["en"]["jobs"][1], "J-1003 | — | — | On Hold")
+        self.assertEqual(got["en"]["chipClass"], "chip printing")
+        self.assertEqual(got["en"]["sent"][1], "b.gcode | Not sent · not a G-code file")
+        self.assertEqual(got["en"]["sent"][0], "c.gcode | Not sent · couldn't be sent")
+        self.assertEqual(got["ar"]["sent"][1], "b.gcode | لم يُرسَل · ليس ملف G-code")
+        self.assertEqual(got["ar"]["sent"][2], "a.gcode | أخذه المتجر")
+        self.assertFalse(any("wrong-kind" in r or "weird-new-code" in r for lang in got.values() for r in lang["sent"]))
+        self.assertEqual(got["en"]["fresh"], "Sample Print Shop · updated 11:02")
+        self.assertEqual(got["ar"]["fresh"], "Sample Print Shop · حُدّث 11:02")
+        self.assertEqual(got["en"]["stale"]["text"], "Couldn't reach the Mac · showing 11:02")
+        self.assertTrue(got["en"]["stale"]["freshShown"] and got["en"]["stale"]["shopHidden"],
+                        "the amber line takes the shop line's place")
+        self.assertIn('id="fresh" hidden', tab.HTML.replace('class="sub warn" ', ''))
+        self.assertTrue(got["en"]["stale"]["problemHidden"], "the amber line says it; not twice")
         self.assertEqual(got["en"]["check"], "418 207")
 
     def test_stage_and_machine_words_are_the_macs(self):
