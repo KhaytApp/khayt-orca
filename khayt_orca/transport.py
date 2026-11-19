@@ -42,6 +42,7 @@ HASH_HEADER = "x-khayt-content-sha256"
 CONTINUE_WAIT = 3.0
 CHUNK = 1 << 20
 TIMEOUT = 30.0
+PRICE_MAX_BYTES = 8 * 1024     # the Mac refuses more, opened (LanServer+Connector.swift)
 
 
 # --- shared with the Mac (vectors in tests/vectors) -------------------------
@@ -234,6 +235,17 @@ class Shop:
             return None, etag
         self._raise_for(a)
         return self._open(a.body, "GET", path), a.headers.get("etag")
+
+    # POST /api/connectors/price — sealed both ways (AAD "POST /api/connectors/price").
+    # The Mac prices the facts with its own code; this only carries them and opens the answer.
+    def price(self, facts: dict) -> dict:
+        path = "/api/connectors/price"
+        plain = json.dumps(facts, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        if len(plain) > PRICE_MAX_BYTES:
+            raise ValueError("price facts over 8 KB")
+        a = self._send("POST", path, seal(plain, seal_key(self.key, self.device_id), seal_aad("POST", path)))
+        self._raise_for(a)
+        return self._open(a.body, "POST", path)
 
     # PUT /api/connectors/slices/{id}/file — the head first, the body only on 100 Continue.
     def upload(self, slice_id: str, file_path: str, sha256: Optional[str] = None) -> dict:

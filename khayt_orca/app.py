@@ -16,7 +16,7 @@ import threading
 import time
 from typing import Callable, Optional
 
-from . import pairing, transport
+from . import pairing, price, transport
 from .outbox import Outbox
 
 PAIRED_FILE = "pairing.json"     # never "secret"/"cert"/"conf": Orca's audit hook refuses those
@@ -24,6 +24,8 @@ STATE_FILE = "state.json"
 QUEUE_EVERY_VISIBLE = 15
 QUEUE_EVERY_HIDDEN = 60
 SLICE_CHECK_EVERY = 60
+# While a price is on screen: ask /self this often whether this device may still see it.
+SCOPES_EVERY = 60
 # What the shop did with a file once it was in the inbox. Settled ones are not asked about again.
 SETTLED = ("left-inbox", "expired", "gone")
 
@@ -44,6 +46,15 @@ class Controller:
         self.etag: Optional[str] = None
         self.problem: Optional[str] = None
         self.queue_at: Optional[float] = None   # when the Mac last answered the queue (epoch s)
+        # The price block. MEMORY ONLY: never written to disk, the outbox or a log.
+        # `price` is what the tab draws (None: no block); `_plate` the last export's facts.
+        self.scopes: Optional[list] = None      # from GET /api/connectors/self
+        self.scopes_at = 0.0
+        self.qty = 1
+        self.price: Optional[dict] = None
+        self._plate: Optional[dict] = None
+        self._price_seq = 0                     # an answer to an older question is dropped
+        self._price_wanted = False
         self._lock = threading.Lock()
         self._wake = threading.Event()
         self._stop = threading.Event()
@@ -82,6 +93,7 @@ class Controller:
             self.paired = p
             self._save_paired(p)
             self.queue, self.etag, self.problem = None, None, None
+            self._forget_price()
         self._wake.set()
         self.on_change()
 
@@ -95,6 +107,7 @@ class Controller:
             self.paired = None
             self._save_paired(None)
             self.queue, self.etag = None, None
+            self._forget_price()
         self.on_change()
 
     def shop(self):
@@ -108,6 +121,13 @@ class Controller:
         """After an export: queue the file (copied, under `name` if given) and wake the worker.
         Never blocks on the network."""
         item = self.outbox.add(gcode_path, name=name, **capture_kw)
+        # A new plate: the old price is not this plate's. Quantity starts at 1 again,
+        # and the worker asks the Mac (never this thread: it is Orca's export).
+        with self._lock:
+            self._plate = price.facts(item.get("capture"))
+            self.qty, self.price = 1, None
+            self._price_seq += 1
+            self._price_wanted = self._plate is not None
         self._wake.set()
         self.on_change()
         return item
@@ -176,6 +196,78 @@ class Controller:
             self.on_change()
         return asked
 
+    # -- the shop's price for the last plate ------------------------------------------
+
+    def _forget_price(self) -> None:
+        self._plate, self.price, self.scopes, self.qty = None, None, None, 1
+        self._price_seq += 1
+        self._price_wanted = False
+
+    def refresh_scopes(self) -> Optional[list]:
+        """What this device may do now (`price:read`, `cost:read`), from the Mac.
+        Losing `price:read` takes the block away at once."""
+        if not self.paired:
+            return None
+        try:
+            got = self.shop().whoami().get("scopes")
+        except (transport.ShopError, OSError):
+            return self.scopes                  # unknown now: keep what was known
+        self.scopes = [s for s in got if isinstance(s, str)] if isinstance(got, list) else []
+        self.scopes_at = self.clock()
+        if "price:read" not in self.scopes and self.price is not None:
+            with self._lock:
+                self.price = None
+                self._price_seq += 1
+            self.on_change()
+        return self.scopes
+
+    def ask_price(self, qty=None) -> Optional[dict]:
+        """Ask the Mac for the last plate's price (blocking: a thread or the worker).
+
+        No block unless /self holds `price:read` and the Mac answers "on". A failure
+        never leaves a number on screen: the block says the Mac could not be reached."""
+        with self._lock:
+            if qty is not None:
+                self.qty = price.clamp_qty(qty)
+            self._price_wanted = False
+            plate, q = self._plate, self.qty
+            self._price_seq += 1
+            seq = self._price_seq
+        if not plate or not self.paired:
+            self._set_price(seq, None)
+            return None
+        if self.scopes is None or self.clock() - self.scopes_at >= SCOPES_EVERY:
+            self.refresh_scopes()
+        scopes = list(self.scopes or ())
+        if "price:read" not in scopes:
+            self._set_price(seq, None)
+            return None
+        # The old figure is for another quantity or another moment: never shown meanwhile.
+        self._set_price(seq, {"state": "asking", "qty": q})
+        try:
+            answer = self.shop().price(price.request(plate, q))
+            block = price.read(answer, q, scopes, plate)
+        except transport.ShopError as e:
+            if e.status == 429 or e.status >= 500 or e.reason in ("unsigned-answer", "seal"):
+                block = {"state": "unreachable", "qty": q}
+            else:
+                # 404: an older Mac, or pairing switched off. Not "khayt-too-old" here:
+                # the queue says that when it is so. Any other refusal: no block.
+                block = None
+        except OSError:
+            block = {"state": "unreachable", "qty": q}
+        except ValueError:
+            block = None                        # facts too large to ask about
+        self._set_price(seq, block)
+        return block
+
+    def _set_price(self, seq: int, block: Optional[dict]) -> None:
+        with self._lock:
+            if seq != self._price_seq:
+                return                          # a newer question is out
+            self.price = block
+        self.on_change()
+
     # -- the worker ---------------------------------------------------------------
 
     def start(self, visible: Callable[[], bool] = lambda: True) -> None:
@@ -186,6 +278,10 @@ class Controller:
         def run():
             last_queue = 0.0
             while not self._stop.is_set():
+                if self._price_wanted:
+                    self.ask_price()
+                elif self.price is not None and self.clock() - self.scopes_at >= SCOPES_EVERY:
+                    self.refresh_scopes()
                 self.deliver()
                 every = QUEUE_EVERY_VISIBLE if visible() else QUEUE_EVERY_HIDDEN
                 if self.clock() - last_queue >= every:
@@ -221,4 +317,6 @@ class Controller:
             # The tab says when the queue was last current, and that it is stale
             # when a refresh fails (the last good queue stays on screen).
             "updatedAt": int(self.queue_at * 1000) if self.queue_at else None,
+            # The price block (price.read allowlisted it), or None: no block at all.
+            "price": dict(self.price) if self.price else None,
         }
