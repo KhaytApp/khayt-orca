@@ -36,6 +36,8 @@ function run(lang) {
     on: card(on),
     cost: card({ ...on, cost: { unit: 28.1, total: 84.3 }, margin: { pct: 32.29 } }),
     costAmount: card({ ...on, cost: { unit: 28.1, total: 84.3 }, margin: { pct: 32.29, amount: 40.2 } }),
+    // The frames as drawn, once the Mac sends amount, pctOnCost and round.step.
+    asDrawn: card({ ...on, round: { step: 0.5 }, cost: { unit: 28.1, total: 84.3 }, margin: { pct: 32.29, pctOnCost: 47.69, amount: 40.2 } }),
     one: card({ ...on, qty: 1, unit: 1240.5, total: 1240.5, rounded: false, basis: 'measured' }),
     asking: card({ state: 'asking', qty: 4 }),
     unreachable: card({ state: 'unreachable', qty: 3 }),

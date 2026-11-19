@@ -118,9 +118,15 @@ def read(answer, qty: int, scopes: Iterable[str], plate: Optional[dict] = None) 
         if isinstance(cost, dict) and _number(cost.get("unit")) and _number(cost.get("total")):
             out["cost"] = {"unit": cost["unit"], "total": cost["total"]}
         margin = answer.get("margin")
-        if isinstance(margin, dict) and _number(margin.get("pct"), -math.inf):
-            out["margin"] = {"pct": margin["pct"]}
-            # Shown only if the Mac sends it: the plugin never subtracts.
-            if _number(margin.get("amount"), -math.inf):
-                out["margin"]["amount"] = margin["amount"]
+        if isinstance(margin, dict):
+            # The frames show "amount · % on cost" (Khayt's cost-plus convention). The
+            # Mac adds `amount` and `pctOnCost` after #2595; until then only `pct`
+            # (of the price) comes, and the tab says so. Never computed here.
+            kept = {k: margin[k] for k in ("pct", "pctOnCost", "amount") if _number(margin.get(k), -math.inf)}
+            if "pct" in kept or "pctOnCost" in kept:
+                out["margin"] = kept
+    # "rounded to 0.50" once the Mac sends the step it rounded to; "rounded" until then.
+    rnd = answer.get("round")
+    if out["rounded"] and isinstance(rnd, dict) and _number(rnd.get("step")) and rnd["step"] > 0:
+        out["round"] = {"step": rnd["step"]}
     return out

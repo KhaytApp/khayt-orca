@@ -82,8 +82,8 @@ const WORDS = {
     machine: {active: 'Ready', service: 'Under service', retired: 'Retired'},
     // The price card (Figma page 20, 186:237 / 186:261 / 186:294).
     plate: 'This plate', qtyLabel: 'Qty', priceL: 'Price', costL: 'Cost', marginL: 'Margin',
-    money: (n, cur) => cur + ' ' + n, each: (q, u) => q + ' × ' + u, rounded: 'rounded',
-    ofPrice: (p) => p + '% of price', pricing: 'Pricing…', priced: "Priced by the shop's Mac", assumed: 'some rates assumed',
+    money: (n, cur) => cur + ' ' + n, each: (q, u) => q + ' × ' + u, rounded: 'rounded', roundedTo: (s) => 'rounded to ' + s,
+    ofPrice: (p) => p + '% of price', onCost: (p) => p + '% on cost', pricing: 'Pricing…', priced: "Priced by the shop's Mac", assumed: 'some rates assumed',
     unreachable: "Couldn't reach the Mac · no price shown", retry: 'Retry',
     unpriced: {'no-material': (t) => t ? 'Add a ' + t + ' spool in Khayt to price this' : 'Add a spool of this material in Khayt to price this',
       'no-currency': "Set the shop's currency in Khayt to price this", 'bad-facts': "This plate can't be priced"}},
@@ -107,8 +107,8 @@ const WORDS = {
     machine: {active: 'جاهزة', service: 'تحت الصيانة', retired: 'خارج الخدمة'},
     // The price card (Figma page 20, 186:314 / 186:338 / 186:371). Western digits, as the Mac's.
     plate: 'هذه اللوحة', qtyLabel: 'الكمية', priceL: 'السعر', costL: 'التكلفة', marginL: 'الهامش',
-    money: (n, cur) => n + ' ' + (cur === 'SAR' ? 'ر.س' : cur), each: (q, u) => q + ' × ' + u, rounded: 'مقرَّب',
-    ofPrice: (p) => p + '% من السعر', pricing: 'جارٍ التسعير…', priced: 'سعّره Mac المتجر', assumed: 'بعض المعدّلات مفترضة',
+    money: (n, cur) => n + ' ' + (cur === 'SAR' ? 'ر.س' : cur), each: (q, u) => q + ' × ' + u, rounded: 'مقرَّب', roundedTo: (s) => 'مقرَّب إلى ' + s,
+    ofPrice: (p) => p + '% من السعر', onCost: (p) => p + '% فوق التكلفة', pricing: 'جارٍ التسعير…', priced: 'سعّره Mac المتجر', assumed: 'بعض المعدّلات مفترضة',
     unreachable: 'تعذّر الوصول إلى الـMac · لا يُعرض سعر', retry: 'إعادة المحاولة',
     unpriced: {'no-material': (t) => t ? 'أضف بكرة ' + t + ' في خيط لتسعير هذه اللوحة' : 'أضف بكرة من هذه الخامة في خيط لتسعير هذه اللوحة',
       'no-currency': 'حدّد عملة المتجر في خيط لتسعير هذه اللوحة', 'bad-facts': 'تعذّر تسعير هذه اللوحة'}},
@@ -153,11 +153,11 @@ function drawPrice(v) {
   }
   if (p.state !== 'on') return void ($('priceCard').hidden = true);
   row(body, [[W.priceL, 'grow'], [money(p.total, p.currency), 'big']]);
-  const sub = [p.qty > 1 ? W.each(p.qty, money(p.unit, p.currency)) : '', p.rounded ? W.rounded : ''].filter(Boolean).join(' · ');
+  const sub = [p.qty > 1 ? W.each(p.qty, money(p.unit, p.currency)) : '', p.rounded ? (p.round ? W.roundedTo(amount(p.round.step)) : W.rounded) : ''].filter(Boolean).join(' · ');
   if (sub) row(body, [[sub, 'grow muted num']]);
   if (p.cost) row(body, [[W.costL, 'grow'], [money(p.cost.total, p.currency), 'num']]);
   if (p.margin) row(body, [[W.marginL, 'grow'], [(p.margin.amount != null ? money(p.margin.amount, p.currency) + ' · ' : '')
-    + W.ofPrice(Number(p.margin.pct).toFixed(1)), 'num']]);
+    + (p.margin.pctOnCost != null ? W.onCost(Number(p.margin.pctOnCost).toFixed(1)) : W.ofPrice(Number(p.margin.pct).toFixed(1))), 'num']]);
   $('priceFoot').hidden = false;
   $('priceFoot').textContent = W.priced + (p.basis === 'measured' ? '' : ' · ' + W.assumed);
 }

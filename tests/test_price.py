@@ -199,6 +199,34 @@ class PriceTests(unittest.TestCase):
         self.ask({**WITH_COST, "margin": {"pct": 32.29, "amount": 40.2}})
         self.assertEqual(self.c.view()["price"]["margin"]["amount"], 40.2)
 
+    def test_the_follow_up_shape_amount_pct_on_cost_and_round_step(self):
+        # After #2595: margin.amount, margin.pctOnCost and round.step (Dev Hub, Nov 19).
+        StrictShop.scopes = ["price:read", "cost:read"]
+        self.export()
+        self.ask({**WITH_COST, "margin": {"pct": 32.29, "pctOnCost": 47.69, "amount": 40.2}, "round": {"step": 0.5}})
+        got = self.c.view()["price"]
+        self.assertEqual(got["margin"], {"pct": 32.29, "pctOnCost": 47.69, "amount": 40.2})
+        self.assertEqual(got["round"], {"step": 0.5})
+        # The step only with rounded:true, only a positive number; a margin needs a percentage.
+        self.ask({**PRICE_ONLY, "rounded": False, "round": {"step": 0.5}})
+        self.assertNotIn("round", self.c.view()["price"])
+        self.ask({**PRICE_ONLY, "round": {"step": 0}})
+        self.assertNotIn("round", self.c.view()["price"])
+        self.ask({**PRICE_ONLY, "round": {"step": "0.5"}})
+        self.assertNotIn("round", self.c.view()["price"])
+        self.ask({**WITH_COST, "margin": {"amount": 40.2}})
+        self.assertNotIn("margin", self.c.view()["price"])
+        self.ask({**WITH_COST, "margin": {"pctOnCost": 47.69, "amount": "40.2"}})
+        self.assertEqual(self.c.view()["price"]["margin"], {"pctOnCost": 47.69})
+
+    def test_the_follow_up_keys_never_reach_a_price_only_device(self):
+        self.export()
+        self.ask({**WITH_COST, "margin": {"pct": 32.29, "pctOnCost": 47.69, "amount": 40.2}, "round": {"step": 0.5}})
+        got = self.c.view()["price"]
+        self.assertNotIn("margin", got)
+        self.assertNotIn("cost", got)
+        self.assertEqual(got["round"], {"step": 0.5}, "the rounding step is part of the price, not the cost")
+
     def test_cost_read_without_cost_in_the_answer_has_no_cost_keys(self):
         StrictShop.scopes = ["price:read", "cost:read"]
         self.export()
