@@ -62,13 +62,18 @@ class Outbox:
                 continue
         return sorted(out, key=lambda i: i["queuedAt"])
 
-    def add(self, file_path: str, **capture_kw) -> dict:
+    def add(self, file_path: str, name: Optional[str] = None, **capture_kw) -> dict:
+        """Copy the file in under `name` (the name the shop sees; default: its own)."""
         item_id = uuid.uuid4().hex[:16]
         os.makedirs(self._dir(item_id))
-        name = os.path.basename(file_path)
+        name = os.path.basename(name or file_path)
         copy = os.path.join(self._dir(item_id), name)
-        shutil.copyfile(file_path, copy)
-        cap = capture_mod.from_file(copy, **capture_kw)
+        try:
+            shutil.copyfile(file_path, copy)
+            cap = capture_mod.from_file(copy, **capture_kw)
+        except BaseException:
+            shutil.rmtree(self._dir(item_id), ignore_errors=True)   # no half-made item left behind
+            raise
         item = {"id": item_id, "file": name, "capture": cap, "state": "new", "sliceId": None,
                 "queuedAt": self.clock(), "nextAt": 0, "tries": 0, "hashRetries": 0, "reason": None}
         self._save(item)

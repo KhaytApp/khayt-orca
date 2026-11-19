@@ -17,7 +17,7 @@ import threading
 
 import orca  # provided by OrcaSlicer
 
-from . import app, tab
+from . import app, capture, tab
 from .compat import VERSION
 from .paths import storage_root
 from . import pairing
@@ -38,28 +38,52 @@ def controller() -> "app.Controller":
     return _controller
 
 
+# The status a refused export reports. OrcaSlicer v2.5.1 binds the enum in
+# src/slic3r/plugin/PythonPluginBridge.cpp:387-391 (Success, Skipped,
+# RecoverableError, FatalError); resolved once, here, so a renamed member can
+# never raise inside the export handler.
+_PluginResult = getattr(orca, "PluginResult", None)
+FAILED = getattr(_PluginResult, "RecoverableError", None) or getattr(_PluginResult, "FatalError", None)
+
+
+def _failed(message: str):
+    """A failure result Orca accepts. If even that cannot be built (a status Orca does
+    not know, a changed signature), report it as skipped: the export never sees an
+    exception from this plugin."""
+    try:
+        if FAILED is None:
+            raise TypeError("no PluginResult status")
+        return orca.ExecutionResult.failure(FAILED, message)
+    except Exception:  # noqa: BLE001
+        return orca.ExecutionResult.skipped(message=message)
+
+
 class _Capture(orca.slicing.SlicingPipelineCapabilityBase):
     def get_name(self):
         return "Khayt: send to inbox"
 
     def execute(self, ctx):
-        path = getattr(ctx, "gcode_path", None)
-        c = controller()
-        if not path:
-            return orca.ExecutionResult.skipped(message="no G-code")
-        if not c.paired:
-            return orca.ExecutionResult.skipped(message="Not paired with a Khayt shop")
         try:
+            path = getattr(ctx, "gcode_path", None)
+            if not path:
+                return orca.ExecutionResult.skipped(message="no G-code")
+            c = controller()
+            if not c.paired:
+                return orca.ExecutionResult.skipped(message="Not paired with a Khayt shop")
+
             def cfg(key):
                 try:
                     return ctx.config_value(key)
                 except Exception:  # noqa: BLE001 - a missing key is just not said
                     return None
-            c.send(path, slicer={"name": "OrcaSlicer", "plugin": VERSION},
+            # `path` is Orca's working copy (".<pid>.<n>.gcode.pp"); the shop sees the
+            # final name, `ctx.output_name` (capture.export_name).
+            name = capture.export_name(path, getattr(ctx, "output_name", None))
+            c.send(path, name=name, slicer={"name": "OrcaSlicer", "plugin": VERSION},
                    printer={"preset": cfg("printer_settings_id")},
                    process={"preset": cfg("print_settings_id")})
-        except (OSError, ValueError) as e:
-            return orca.ExecutionResult.failure(1, f"Khayt: {e}")
+        except Exception as e:  # noqa: BLE001 - never raise into Orca's export: say why instead
+            return _failed(f"Khayt: {e}")
         return orca.ExecutionResult.success(message="Queued for the Khayt inbox")
 
 

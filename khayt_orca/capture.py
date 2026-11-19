@@ -34,6 +34,28 @@ def file_type(name: str) -> Optional[str]:
     return None
 
 
+def export_name(gcode_path: str, output_name: Optional[str] = None) -> str:
+    """The name the shop sees for an Orca export.
+
+    At the post-process step Orca hands the plugin a WORKING COPY, named like
+    `.70276.0.gcode.pp` (a leading dot, Orca's process id, a counter, the real
+    extension and `.pp`), and the final name separately, as `ctx.output_name`
+    (the same as SLIC3R_PP_OUTPUT_NAME for post-processing scripts). Nov 19 2026,
+    third real run: the plugin read the working copy's name and refused the file.
+    """
+    final = os.path.basename((output_name or "").replace("\\", "/")).strip()
+    if final and file_type(final):
+        return final
+    name = os.path.basename(gcode_path)
+    if name.lower().endswith(".pp"):
+        name = name[:-3]
+    kind = file_type(name)
+    if name.startswith(".") and kind:
+        # No final name given: keep the real extension, drop Orca's temp prefix.
+        return "OrcaSlicer export." + ("gcode.3mf" if kind == "gcode.3mf" else name.rsplit(".", 1)[-1])
+    return name
+
+
 def build(file_path: str, *, intent: str = "inbox", job_id: Optional[str] = None,
           machine_id: Optional[str] = None, start_print: bool = False, slicer: Optional[dict] = None,
           printer: Optional[dict] = None, process: Optional[dict] = None, plate: Optional[dict] = None,

@@ -104,9 +104,10 @@ class Controller:
 
     # -- sending ----------------------------------------------------------------
 
-    def send(self, gcode_path: str, **capture_kw) -> dict:
-        """After an export: queue the file (copied) and wake the worker. Never blocks on the network."""
-        item = self.outbox.add(gcode_path, **capture_kw)
+    def send(self, gcode_path: str, name: Optional[str] = None, **capture_kw) -> dict:
+        """After an export: queue the file (copied, under `name` if given) and wake the worker.
+        Never blocks on the network."""
+        item = self.outbox.add(gcode_path, name=name, **capture_kw)
         self._wake.set()
         self.on_change()
         return item
