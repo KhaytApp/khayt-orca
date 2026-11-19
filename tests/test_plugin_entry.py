@@ -126,3 +126,34 @@ class ExportName(unittest.TestCase):
         self.assertEqual(n("/t/Benchy.gcode", None), "Benchy.gcode")
         # A final name Khayt can't take falls back to the file itself, and capture then refuses it.
         self.assertEqual(n("/t/.1.0.stl.pp", "part.stl"), ".1.0.stl")
+
+
+class FailureNeverRaises(OrcaExport):
+    def test_failure_status_is_resolved_from_orcas_enum(self):
+        import orca
+        self.assertIs(self.plugin.FAILED, orca.PluginResult.RecoverableError)
+
+    def test_if_failure_itself_throws_the_export_gets_skipped_with_the_reason(self):
+        import orca
+
+        def broken(*a, **kw):
+            raise TypeError("failure(): incompatible function arguments")
+        orca.ExecutionResult.failure = broken
+        self._paired()
+        r = self.plugin._Capture().execute(self._ctx(".70276.0.stl.pp", "part.stl"))
+        self.assertEqual(r.kind, "skipped")
+        self.assertIn("Khayt takes G-code", r.message)
+
+    def test_without_a_known_status_it_still_answers(self):
+        self.plugin.FAILED = None
+        self._paired()
+        r = self.plugin._Capture().execute(self._ctx(".70276.0.stl.pp", "part.stl"))
+        self.assertEqual(r.kind, "skipped")
+
+    def test_falls_back_to_fatal_error_when_recoverable_is_missing(self):
+        import orca
+        del orca.PluginResult.RecoverableError
+        for m in [m for m in sys.modules if m.startswith("khayt_orca")]:
+            del sys.modules[m]
+        plugin = importlib.import_module("khayt_orca.plugin")
+        self.assertIs(plugin.FAILED, orca.PluginResult.FatalError)

@@ -38,18 +38,39 @@ def controller() -> "app.Controller":
     return _controller
 
 
+# The status a refused export reports. OrcaSlicer v2.5.1 binds the enum in
+# src/slic3r/plugin/PythonPluginBridge.cpp:387-391 (Success, Skipped,
+# RecoverableError, FatalError); resolved once, here, so a renamed member can
+# never raise inside the export handler.
+_PluginResult = getattr(orca, "PluginResult", None)
+FAILED = getattr(_PluginResult, "RecoverableError", None) or getattr(_PluginResult, "FatalError", None)
+
+
+def _failed(message: str):
+    """A failure result Orca accepts. If even that cannot be built (a status Orca does
+    not know, a changed signature), report it as skipped: the export never sees an
+    exception from this plugin."""
+    try:
+        if FAILED is None:
+            raise TypeError("no PluginResult status")
+        return orca.ExecutionResult.failure(FAILED, message)
+    except Exception:  # noqa: BLE001
+        return orca.ExecutionResult.skipped(message=message)
+
+
 class _Capture(orca.slicing.SlicingPipelineCapabilityBase):
     def get_name(self):
         return "Khayt: send to inbox"
 
     def execute(self, ctx):
-        path = getattr(ctx, "gcode_path", None)
-        c = controller()
-        if not path:
-            return orca.ExecutionResult.skipped(message="no G-code")
-        if not c.paired:
-            return orca.ExecutionResult.skipped(message="Not paired with a Khayt shop")
         try:
+            path = getattr(ctx, "gcode_path", None)
+            if not path:
+                return orca.ExecutionResult.skipped(message="no G-code")
+            c = controller()
+            if not c.paired:
+                return orca.ExecutionResult.skipped(message="Not paired with a Khayt shop")
+
             def cfg(key):
                 try:
                     return ctx.config_value(key)
@@ -62,8 +83,7 @@ class _Capture(orca.slicing.SlicingPipelineCapabilityBase):
                    printer={"preset": cfg("printer_settings_id")},
                    process={"preset": cfg("print_settings_id")})
         except Exception as e:  # noqa: BLE001 - never raise into Orca's export: say why instead
-            # pybind: the status must be an orca.PluginResult member, not an int.
-            return orca.ExecutionResult.failure(orca.PluginResult.RecoverableError, f"Khayt: {e}")
+            return _failed(f"Khayt: {e}")
         return orca.ExecutionResult.success(message="Queued for the Khayt inbox")
 
 
