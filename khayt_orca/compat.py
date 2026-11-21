@@ -21,22 +21,32 @@ MIN_KHAYT_MAC = None
 PROTOCOL = {"pairing": 2, "routes": 1}
 
 
-def manifest(sha256: str, wheel: str) -> dict:
-    """The record a plugin directory (and anyone checking a download) reads:
-    which file, its hash, and what it needs. Data only."""
-    return {
-        "v": 1,
+ID = "app.khayt.orca"
+# What the plugin may use on the Mac, in the Mac's own words. Printing is not a
+# scope (v1 never prints). The Mac grants these at pairing; the record says them.
+SCOPES = ["slices:send", "queue:read"]
+
+
+def manifest(sha256: str, wheel: str, size: int) -> dict:
+    """The `kind: "slicer"` record the plugin directory signs into its index, in the
+    shape Khayt's lib/plugin-directory.js `checkSlicerRecord` accepts: which file,
+    its hash and size (Orca checks no signature, so the hash is the only proof of
+    a download), and what it needs. Data only. The record's `version` is the
+    package's; `requires` appears once a Khayt for Mac release carries the routes."""
+    record = {
         "kind": "slicer",
-        "host": "OrcaSlicer",
+        "id": ID,
+        "version": VERSION,
+        "host": "orca",
         "hostVersion": ">=" + MIN_ORCA,
-        "package": {"name": "khayt-orca", "version": VERSION, "file": wheel, "sha256": sha256},
-        "requires": {"khaytMac": (">=" + MIN_KHAYT_MAC) if MIN_KHAYT_MAC else None},
-        "protocol": PROTOCOL,
-        # Scopes in the Mac's own words; printing is not a scope (v1 never prints).
-        "scopes": ["slices:send", "queue:read"],
+        "package": {"name": "khayt-orca", "file": wheel, "sha256": sha256, "size": size},
+        "scopes": list(SCOPES),
         # Asked up front: the worker thread only. Its files are in Orca's own data
         # folder (no question), and the Mac is asked about once, by host.
         "hostPermissions": ["threading"],
         "source": "https://github.com/KhaytApp/khayt-orca",
         "licence": "MIT",
     }
+    if MIN_KHAYT_MAC:
+        record["requires"] = {"khayt": {"mac": ">=" + MIN_KHAYT_MAC}}
+    return record
