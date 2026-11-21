@@ -17,11 +17,16 @@ against the Khayt app on a Mac.
   each file becomes. Nothing creates a job, a quote or a print on its own, and the plugin never
   starts a print.
 - **Shows the shop's queue**: each open job's number, stage and machine, and the name of a file
-  you sent for it. Never a job title, customer, price or note: the Mac does not send them.
+  you sent for it. Never a job title, customer or note: the Mac does not send them.
+- **Shows the shop's price for the plate you just exported, only if the shop allows it.** Prices
+  appear only if the shop turns on *Show prices in OrcaSlicer* on the Mac and grants this device.
+  The plugin only shows the figure the Mac sends, and never stores it. Cost and margin appear only
+  with the second grant, *Price and cost*. Choose a quantity and the Mac prices it again. If the
+  Mac can't be reached, the tab says so and shows no number.
 
-Its key opens only the plugin's own routes on the Mac, never your book, customers or prices. On
-your network, what you sliced is encrypted and every answer from the Mac is signed. The G-code
-file itself is checked against the hash it was announced with.
+Its key opens only the plugin's own routes on the Mac, never your book or customers. On your
+network, what you sliced and the price are encrypted, and every answer from the Mac is signed. The
+G-code file itself is checked against the hash it was announced with.
 
 ## Code
 
@@ -31,6 +36,7 @@ file itself is checked against the hash it was announced with.
 | `khayt_orca/transport.py` | signed requests, signed answers, sealed bodies; the client |
 | `khayt_orca/capture.py`, `gcode.py` | what is announced about a file, and the slicer's own figures |
 | `khayt_orca/outbox.py` | the send queue that survives a restart |
+| `khayt_orca/price.py` | the shop's price: the facts asked about, what of the answer is believed |
 | `khayt_orca/app.py` | the plugin's state and the tab's view, without Orca |
 | `khayt_orca/plugin.py`, `tab.py` | the OrcaSlicer entry point (2.5 or later) and the tab page |
 

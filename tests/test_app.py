@@ -202,6 +202,46 @@ class TabScript(unittest.TestCase):
         self.assertTrue(got["en"]["stale"]["problemHidden"], "the amber line says it; not twice")
         self.assertEqual(got["en"]["check"], "418 207")
 
+    def test_the_price_card(self):
+        # Figma page 20 (186:237 … 186:371), approved: only the Mac's figures, formatted.
+        js = tab.HTML.split("<script>")[1].split("</script>")[0]
+        out = subprocess.run(["node", str(pathlib.Path(__file__).parent / "tab_smoke.js")], input=js,
+                             capture_output=True, text=True, encoding="utf-8", check=True,
+                             env={**os.environ, "TZ": "UTC"}).stdout
+        en, ar = json.loads(out)["en"]["price"], json.loads(out)["ar"]["price"]
+        self.assertTrue(en["off"]["hidden"], "off: no block at all, not a blank")
+        self.assertTrue(en["unpaired"])
+        self.assertEqual(en["on"]["rows"], ["Price | SAR 124.50", "3 × SAR 41.50 · rounded"])
+        self.assertEqual(en["on"]["foot"], "Priced by the shop's Mac · some rates assumed")
+        self.assertEqual(en["on"]["qty"], "3")
+        self.assertEqual(en["cost"]["rows"][2:], ["Cost | SAR 84.30", "Margin | 32.3% of price"])
+        self.assertEqual(en["costAmount"]["rows"][3], "Margin | SAR 40.20 · 32.3% of price")
+        self.assertNotIn("on cost", " ".join(en["costAmount"]["rows"]), "no pctOnCost, no on-cost words")
+        self.assertEqual(en["asDrawn"]["rows"], ["Price | SAR 124.50", "3 × SAR 41.50 · rounded to 0.50",
+                                                 "Cost | SAR 84.30", "Margin | SAR 40.20 · 47.7% on cost"],
+                         "186:261 as drawn")
+        self.assertEqual(ar["asDrawn"]["rows"], ["السعر | 124.50 ر.س", "3 × 41.50 ر.س · مقرَّب إلى 0.50",
+                                                 "التكلفة | 84.30 ر.س", "الهامش | 40.20 ر.س · 47.7% فوق التكلفة"],
+                         "186:338 as drawn")
+        self.assertEqual(en["one"]["rows"], ["Price | SAR 1,240.50"], "one piece, not rounded: no sub-line")
+        self.assertEqual(en["one"]["foot"], "Priced by the shop's Mac")
+        self.assertEqual(en["asking"]["rows"], ["Pricing…"])
+        self.assertEqual(en["unreachable"]["rows"], ["Couldn't reach the Mac · no price shown | Retry"])
+        self.assertIsNone(en["unreachable"]["foot"])
+        self.assertEqual(en["noMaterial"]["rows"], ["Add a PETG spool in Khayt to price this"])
+        self.assertEqual(en["retry"], {"posted": [{"type": "price-retry"}], "rows": ["Pricing…"]})
+        # The stepper: the number moves at once, the Mac is asked once, 600 ms after the last click.
+        self.assertEqual(en["stepping"], {"qty": "5", "rows": ["Pricing…"], "posted": 0, "kept": ["Pricing…"],
+                                          "after": [{"type": "qty", "qty": 5}]})
+        self.assertIn("600", tab.HTML)
+        self.assertEqual(ar["on"]["rows"], ["السعر | 124.50 ر.س", "3 × 41.50 ر.س · مقرَّب"])
+        self.assertEqual(ar["on"]["foot"], "سعّره Mac المتجر · بعض المعدّلات مفترضة")
+        self.assertEqual(ar["cost"]["rows"][2:], ["التكلفة | 84.30 ر.س", "الهامش | 32.3% من السعر"])
+        self.assertEqual(ar["unreachable"]["rows"], ["تعذّر الوصول إلى الـMac · لا يُعرض سعر | إعادة المحاولة"])
+        for lang in (en, ar):
+            self.assertFalse(any(c.isdigit() for r in lang["unreachable"]["rows"] for c in r),
+                             "an unreachable Mac shows no number")
+
     def test_stage_and_machine_words_are_the_macs(self):
         # Copied from Khayt (renderer/locales/{en,ar}.js queue.*, Words.swift
         # mac.life_badge_*), so the queue reads the same in the tab as on the Mac.
