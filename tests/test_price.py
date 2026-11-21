@@ -328,7 +328,25 @@ class PriceTests(unittest.TestCase):
                     self.assertNotIn(figure, text, os.path.join(dirpath, name))
 
 
+# The rounded vector from Khayt's test/fixtures/connector-price-vectors.json at
+# #2617 (the Mac follow-up), as the cost grant receives it.
+MAC_2617_ROUNDED = {"prices": "on", "currency": "SAR", "qty": 1, "unit": 80, "total": 80, "rounded": True,
+                    "basis": "measured", "cost": {"unit": 58.6299, "total": 58.63},
+                    "margin": {"pct": 26.71, "pctOnCost": 36.45, "amount": 21.37}, "round": {"step": 5}}
+
+
 class Read(unittest.TestCase):
+    def test_the_macs_own_rounded_vector_reads_as_drawn(self):
+        got = price.read(MAC_2617_ROUNDED, 1, ["price:read", "cost:read"])
+        self.assertEqual(got["margin"], {"pct": 26.71, "pctOnCost": 36.45, "amount": 21.37})
+        self.assertEqual(got["round"], {"step": 5})
+        self.assertEqual(got["cost"], {"unit": 58.6299, "total": 58.63})
+        # What a price-only device receives from the route: no cost, no margin, the step.
+        lite = {k: v for k, v in MAC_2617_ROUNDED.items() if k not in ("cost", "margin")}
+        got = price.read(lite, 1, ["price:read"])
+        self.assertNotIn("margin", got)
+        self.assertEqual(got["round"], {"step": 5})
+
     def test_facts_skip_a_plate_with_no_time_or_no_weight(self):
         self.assertIsNone(price.facts({"filaments": [{"grams": 3}]}))
         self.assertIsNone(price.facts({"timeSec": 60, "filaments": [{"grams": 0}]}))
