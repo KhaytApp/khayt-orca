@@ -17,7 +17,7 @@ ROOT = pathlib.Path(__file__).parent.parent
 # runs the real one when a Khayt checkout is at hand.
 _SLICER_KEYS = {"kind", "id", "version", "host", "hostVersion", "package", "requires", "scopes",
                 "hostPermissions", "source", "licence"}
-_SLICER_SCOPES = {"slices:send", "queue:read"}
+_SLICER_SCOPES = {"slices:send", "queue:read", "price:read", "cost:read"}
 
 
 def slicer_record_problems(r):
@@ -47,6 +47,8 @@ def slicer_record_problems(r):
     sc = r.get("scopes")
     if not isinstance(sc, list) or not sc or any(s not in _SLICER_SCOPES for s in sc) or len(set(sc)) != len(sc):
         p.append("scopes")
+    elif "cost:read" in sc and "price:read" not in sc:
+        p.append("scopes: cost:read only with price:read")
     hp = r.get("hostPermissions")
     if hp is not None and (not isinstance(hp, list) or len(hp) > 10 or any(
             not isinstance(h, str) or not re.fullmatch(r"[a-z_]+(:[A-Za-z0-9._~/-]{1,120})?", h) for h in hp)):
@@ -99,12 +101,20 @@ class Compat(unittest.TestCase):
         good = compat.manifest("c" * 64, "khayt_orca-0.1.0-py3-none-any.whl", 10)
         for change in ({"v": 1}, {"protocol": {}}, {"host": "OrcaSlicer"}, {"id": "Khayt"},
                        {"scopes": ["printer:send"]}, {"scopes": []}, {"licence": ""},
+                       {"scopes": ["slices:send", "cost:read"]},
                        {"source": "http://x"}, {"hostVersion": "2.5.1"},
                        {"requires": {"khaytMac": None}},
                        {"package": dict(good["package"], version="0.1.0")},
                        {"package": dict(good["package"], size=0)},
                        {"package": dict(good["package"], sha256="A" * 64)}):
             self.assertNotEqual(slicer_record_problems(dict(good, **change)), [], change)
+
+    def test_the_price_scopes_are_accepted_cost_only_on_top_of_price(self):
+        good = compat.manifest("e" * 64, "khayt_orca-0.1.0-py3-none-any.whl", 10)
+        for scopes in (["slices:send", "queue:read", "price:read"],
+                       ["slices:send", "queue:read", "price:read", "cost:read"]):
+            self.assertEqual(slicer_record_problems(dict(good, scopes=scopes)), [], scopes)
+        self.assertFalse("cost:read" in compat.SCOPES and "price:read" not in compat.SCOPES)
 
     def test_against_khayts_own_checker_when_it_is_here(self):
         # KHAYT_DIR=<a Khayt checkout with lib/plugin-directory.js> runs the real rule.
@@ -114,10 +124,17 @@ class Compat(unittest.TestCase):
             self.skipTest("set KHAYT_DIR to a Khayt checkout that has lib/plugin-directory.js")
         m = compat.manifest("d" * 64, "khayt_orca-0.1.0-py3-none-any.whl", 48213)
         js = ("const D = require(process.argv[1]); let s = ''; process.stdin.on('data', d => s += d)"
-              ".on('end', () => console.log(JSON.stringify(D.checkSlicerRecord(JSON.parse(s)))));")
-        out = subprocess.run(["node", "-e", js, str(lib)], input=json.dumps(m), capture_output=True,
+              ".on('end', () => console.log(JSON.stringify(JSON.parse(s).map(D.checkSlicerRecord))));")
+        records = [m, dict(m, scopes=m["scopes"] + ["price:read"]),
+                   dict(m, scopes=m["scopes"] + ["price:read", "cost:read"]),
+                   dict(m, scopes=m["scopes"] + ["cost:read"])]
+        out = subprocess.run(["node", "-e", js, str(lib)], input=json.dumps(records), capture_output=True,
                              text=True, timeout=30, check=True).stdout
-        self.assertEqual(json.loads(out), [])
+        real = json.loads(out)
+        self.assertEqual(real[:3], [[], [], []])
+        self.assertNotEqual(real[3], [], "cost:read without price:read")
+        self.assertEqual([bool(x) for x in real], [bool(slicer_record_problems(r)) for r in records],
+                         "the copy here agrees with Khayt's checker")
 
     def test_the_release_workflow_never_publishes(self):
         wf = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
