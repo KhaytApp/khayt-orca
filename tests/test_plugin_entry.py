@@ -8,11 +8,10 @@ import os
 import pathlib
 import sys
 import tempfile
-import types
 import unittest
 
 
-from tests.fake_orca_module import fake_orca  # noqa: E402
+from tests.fake_orca_module import deliver, fake_orca  # noqa: E402
 
 
 class Entry(unittest.TestCase):
@@ -48,15 +47,31 @@ class Entry(unittest.TestCase):
     def test_an_export_before_pairing_is_skipped_not_failed(self):
         p = os.path.join(self.tmp.name, "a.gcode")
         pathlib.Path(p).write_text("G28\n", encoding="utf-8")
-        ctx = types.SimpleNamespace(gcode_path=p, config_value=lambda k: None)
+        import orca
+        ctx = orca.slicing.SlicingPipelineContext(gcode_path=p)
         r = self.plugin._Capture().execute(ctx)
         self.assertEqual(r.kind, "skipped")
 
     def test_the_tab_answers_ready_with_the_view(self):
         t = self.plugin._Tab()
-        t.on_message({"type": "ready"})
+        deliver(t, {"type": "ready"})
         self.assertEqual(t.sent[-1]["type"], "view")
         self.assertFalse(t.sent[-1]["view"]["paired"])
+
+    def test_the_page_gets_the_view_exactly_as_the_controller_made_it(self):
+        # post_message goes through JSON (PluginJsonPy.hpp): a tuple, a set or an
+        # object would arrive as something else, and the page would draw that.
+        t = self.plugin._Tab()
+        deliver(t, {"type": "ready"})
+        self.assertEqual(t.sent[-1], {"type": "view", "view": self.plugin.controller().view()})
+
+    def test_a_message_that_is_not_an_object_is_ignored(self):
+        # Orca hands on_message the raw string when the page's message is not JSON,
+        # and any JSON value when it is (PagesPluginCapabilityTrampoline.hpp).
+        t = self.plugin._Tab()
+        for m in ("not json", "[1, 2]", "3", "null", '"ready"', '{"type": 3}', '{"type": ["ready"]}'):
+            deliver(t, m)
+        self.assertEqual(getattr(t, "sent", []), [])
 
 
 class OrcaExport(Entry):
@@ -78,8 +93,8 @@ class OrcaExport(Entry):
         os.makedirs(d, exist_ok=True)
         p = os.path.join(d, temp_name)
         pathlib.Path(p).write_text(body, encoding="utf-8")
-        return types.SimpleNamespace(gcode_path=p, output_name=output_name, host="File",
-                                     config_value=lambda k: None)
+        import orca
+        return orca.slicing.SlicingPipelineContext(gcode_path=p, output_name=output_name, host="File")
 
     def test_the_working_copy_is_sent_under_its_final_name(self):
         c = self._paired()
@@ -114,6 +129,49 @@ class OrcaExport(Entry):
         with self.assertRaises(TypeError):
             orca.ExecutionResult.success(message=3)
         orca.ExecutionResult.failure(orca.PluginResult.FatalError, "x")
+        # PythonPluginBridge.cpp
+        with self.assertRaises(ValueError):
+            orca.register_capability(type("Loose", (), {}))
+        with self.assertRaises(ValueError):
+            orca.plugin(type("Loose", (), {}))
+        with self.assertRaises(TypeError):
+            orca.request_permissions(threading=1)
+        with self.assertRaises(TypeError):
+            orca.request_permissions(fs_readwrite="/a")
+        with self.assertRaises(ValueError):
+            orca.request_permissions(fs_readwrite=[""])
+        with self.assertRaises(TypeError):
+            orca.request_permissions(files=["/a"])
+        # SlicingPipelinePluginCapability.cpp
+        ctx = orca.slicing.SlicingPipelineContext(gcode_path="/t/a.gcode", config={"k": "v"})
+        with self.assertRaises(AttributeError):
+            ctx.gcode_path = "/t/b.gcode"
+        with self.assertRaises(TypeError):
+            ctx.config_value(3)
+        self.assertEqual((ctx.config_value("k"), ctx.config_value("nope")), ("v", None))
+        # PluginJsonPy.hpp
+        page = orca.pages.PagesPluginCapabilityBase()
+        with self.assertRaises(OverflowError):
+            page.post_message({"n": 2 ** 64})
+        with self.assertRaises(UnicodeEncodeError):
+            page.post_message({"s": "\ud800"})
+        page.post_message({1: (1, 2), "x": {3}, "f": float("nan")})
+        self.assertEqual(page.sent[-1], {"1": [1, 2], "x": "{3}", "f": None})
+
+    def test_the_presets_are_read_from_orcas_config(self):
+        import orca
+        c = self._paired()
+        d = os.path.join(self.tmp.name, "orca-tmp")
+        os.makedirs(d, exist_ok=True)
+        p = os.path.join(d, ".1.0.gcode.pp")
+        pathlib.Path(p).write_text("G28\n", encoding="utf-8")
+        ctx = orca.slicing.SlicingPipelineContext(
+            gcode_path=p, output_name="Cube.gcode", host="File",
+            config={"printer_settings_id": "Sample printer 0.4", "print_settings_id": "0.20mm Standard"})
+        self.assertEqual(self.plugin._Capture().execute(ctx).kind, "success")
+        cap = c.outbox.items()[0]["capture"]
+        self.assertEqual((cap["printer"]["preset"], cap["process"]["preset"]),
+                         ("Sample printer 0.4", "0.20mm Standard"))
 
 
 class ExportName(unittest.TestCase):

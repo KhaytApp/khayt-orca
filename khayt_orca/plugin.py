@@ -100,9 +100,13 @@ class _Tab(orca.pages.PagesPluginCapabilityBase):
         self.post_message({"type": "view", "view": controller().view()})
 
     def on_message(self, data):
+        # Orca passes the page's message parsed as JSON, or the raw string when it
+        # is not JSON (PagesPluginCapabilityTrampoline.hpp). Only our objects count.
+        if not isinstance(data, dict) or not isinstance(data.get("type"), str):
+            return
         c = controller()
         c.on_change = self._push
-        kind = (data or {}).get("type")
+        kind = data["type"]
         if kind == "ready":
             _Tab.visible = True
             self._push()
