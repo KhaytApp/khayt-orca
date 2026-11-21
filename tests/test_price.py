@@ -336,6 +336,15 @@ MAC_2617_ROUNDED = {"prices": "on", "currency": "SAR", "qty": 1, "unit": 80, "to
 
 
 class Read(unittest.TestCase):
+    def test_a_zero_cost_answer_has_no_pct_on_cost_and_that_is_fine(self):
+        # #2617 (9763b7a45) leaves margin.pctOnCost out when the cost total is 0;
+        # pct and amount always come. The tab then says "amount · % of price".
+        a = {**MAC_2617_ROUNDED, "cost": {"unit": 0, "total": 0}, "margin": {"pct": 100, "amount": 80}}
+        got = price.read(a, 1, ["price:read", "cost:read"])
+        self.assertEqual(got["margin"], {"pct": 100, "amount": 80})
+        self.assertNotIn("pctOnCost", got["margin"])
+        self.assertEqual(got["cost"], {"unit": 0, "total": 0})
+
     def test_the_macs_own_rounded_vector_reads_as_drawn(self):
         got = price.read(MAC_2617_ROUNDED, 1, ["price:read", "cost:read"])
         self.assertEqual(got["margin"], {"pct": 26.71, "pctOnCost": 36.45, "amount": 21.37})

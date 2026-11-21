@@ -216,6 +216,7 @@ class TabScript(unittest.TestCase):
         self.assertEqual(en["on"]["qty"], "3")
         self.assertEqual(en["cost"]["rows"][2:], ["Cost | SAR 84.30", "Margin | 32.3% of price"])
         self.assertEqual(en["costAmount"]["rows"][3], "Margin | SAR 40.20 · 32.3% of price")
+        self.assertNotIn("on cost", " ".join(en["costAmount"]["rows"]), "no pctOnCost, no on-cost words")
         self.assertEqual(en["asDrawn"]["rows"], ["Price | SAR 124.50", "3 × SAR 41.50 · rounded to 0.50",
                                                  "Cost | SAR 84.30", "Margin | SAR 40.20 · 47.7% on cost"],
                          "186:261 as drawn")
